@@ -25,6 +25,16 @@ const authListeners = new Set()
 const settingListeners = new Set()
 const respawnListeners = new Set()
 const unsubscribers = []
+const breakListeners = new Set()
+
+// Boxity boards (dashboard-editable after the first declaration; max 10). Scores are submitted
+// from game.js through submitScore().
+const LEADERBOARDS = [
+  { id: 'wins', label: 'Wins', order: 'desc', mode: 'latest', format: 'compact', reset: 'none' },
+  { id: 'speed', label: 'Speed', order: 'desc', mode: 'latest', format: 'compact', reset: 'none' },
+  { id: 'stage', label: 'Furthest Stage', order: 'desc', mode: 'best', format: 'number', reset: 'none' },
+  { id: 'rebirths', label: 'Rebirths', order: 'desc', mode: 'latest', format: 'number', reset: 'none' },
+]
 
 function emit(listeners, ...args) {
   for (const fn of listeners) {
@@ -182,6 +192,25 @@ export function init() {
         if (event === 'respawn_request') emit(respawnListeners)
       }),
     )
+
+    // Required integrations, right after init: ad breaks, screen ads, leaderboards, features.
+    try {
+      SDK.ads?.onBreakStart?.(() => emit(breakListeners, true))
+      SDK.ads?.onBreakEnd?.(() => emit(breakListeners, false))
+      SDK.ads?.declareScreens?.({ panel: {}, gameplay: {} })
+    } catch (err) {
+      console.warn('[bloxity] ads setup failed', err)
+    }
+    try {
+      SDK.leaderboard?.define?.(LEADERBOARDS)
+    } catch (err) {
+      console.warn('[bloxity] leaderboard define failed', err)
+    }
+    try {
+      SDK.game.registerFeature?.('play_with_friends')
+    } catch {
+      // Older SDK builds.
+    }
 
     SDK.game.loadingStep('Building the island')
   } catch (err) {
@@ -377,6 +406,99 @@ export function requestFullscreen(on) {
     if (!SDK) return
     if (on) SDK.portal.requestFullscreen()
     else SDK.portal.exitFullscreen()
+  } catch {
+    // Ignore.
+  }
+}
+
+// --- Ads ----------------------------------------------------------------
+// fn(true) when Boxity starts an ad break (pause the simulation, mute), fn(false) when it ends.
+export function onAdBreak(fn) {
+  breakListeners.add(fn)
+  return () => breakListeners.delete(fn)
+}
+// Tells the portal which screen is up so it can place banners: 'panel' (a menu window), 'gameplay'.
+export function adScreen(type) {
+  try {
+    sdk()?.ads?.screen?.(type)
+  } catch {
+    // Ignore.
+  }
+}
+export function hideAdScreen() {
+  try {
+    sdk()?.ads?.hideScreen?.()
+  } catch {
+    // Ignore.
+  }
+}
+export function rewardedAdsAvailable() {
+  try {
+    return !!sdk()?.ads?.isAvailable?.()
+  } catch {
+    return false
+  }
+}
+// Plays a rewarded ad (placement: lowercase letters, digits, hyphens). True only when it completed:
+// grant the reward then, and only then.
+export async function watchRewardedAd(placement) {
+  try {
+    const r = await sdk()?.ads?.showRewarded?.(placement)
+    return r?.status === 'completed'
+  } catch {
+    return false
+  }
+}
+
+// --- Death screen -----------------------------------------------------------
+// Required where the player can die: Boxity shows ads while the player waits, and the game's own
+// Respawn button stays disabled until its countdown ends. Returns { onCountdown(fn), respawn() }
+// or null without the SDK (respawn at once then).
+export function showDeathScreen() {
+  try {
+    const d = sdk()?.deathScreen?.show?.()
+    return d && typeof d.respawn === 'function' ? d : null
+  } catch {
+    return null
+  }
+}
+export function hideDeathScreen() {
+  try {
+    sdk()?.deathScreen?.hide?.()
+  } catch {
+    // Ignore.
+  }
+}
+
+// --- Leaderboards -------------------------------------------------------------
+// Submits a score that is final (call sparingly, never per frame). Resolves null without a player.
+export async function submitScore(id, score) {
+  try {
+    return (await sdk()?.leaderboard?.submit?.(id, score)) ?? null
+  } catch {
+    return null
+  }
+}
+export function openLeaderboard(id) {
+  try {
+    return !!sdk()?.leaderboard?.open?.(id)
+  } catch {
+    return false
+  }
+}
+
+// --- Friends / rooms ------------------------------------------------------------
+// Friend-join toasts: report everyone already in the room, then each later arrival.
+export function playerInRoom(name) {
+  try {
+    sdk()?.game?.playerInRoom?.(name)
+  } catch {
+    // Ignore.
+  }
+}
+export function playerJoined(name) {
+  try {
+    sdk()?.game?.playerJoined?.(name)
   } catch {
     // Ignore.
   }

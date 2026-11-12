@@ -53,15 +53,14 @@ export function buildShowroom(ctx) {
       const car = CARS[id]
       const z = S.z0 + 5.5 + i * ((len - 11) / (row.length - 1))
       block(statics, mat('#1b1f2e'), x, y, z, 7.4, 0.1, 7.4, false)
-      const pad = neon(car.gems ? '#ffe21a' : '#ff2236', 1.25)
+      const pad = neon('#ff2236', 1.25)
 
       const padMesh = block(live, pad, x, y + 0.1, z, 6.6, 0.05, 6.6, false)
       ctx.carPads[id] = padMesh
       const g = place(statics, x, y + 0.12, z, -Math.PI / 2) // facing west, toward spawn (baked: static)
       const t = buildTruck(car.paint)
       g.add(t.root)
-      const sub = car.gems ? null : `${fmt(car.wins)} WINS REQUIRED`
-      const s = sign(priceLines(`+${car.bonus} Speed`, car.gems, sub), 2.1)
+      const s = sign(priceLines(`+${car.bonus} Speed`, `${fmt(car.wins)} WINS REQUIRED`), 2.1)
       s.position.set(x, y + 5.3, z)
       live.add(s)
       ctx.prompts.push({ x, z, y, r: ri === 0 ? 6.5 : 9.5, title: car.name, action: 'Buy', kind: 'car', car: id })

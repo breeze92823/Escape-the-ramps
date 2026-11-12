@@ -10,6 +10,12 @@ export const inputState = {
   zoom: 0, // wheel notches since the camera last read them (+ = away)
   sprint: false,
   jump: false, // edge: cleared by player.js
+  jumpHeld: false, // Space or the touch HOP button is down (Wings glide while it is)
+  controls: 0, // counts control presses (drive keys, Space, Shift, joystick touch, HOP/NITRO); the AFK auto ride stops when it changes
+}
+const CONTROL_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'])
+export function markControl() {
+  inputState.controls++
 }
 
 // One wheel notch per WheelEvent.deltaMode (pixels, lines, pages), so a trackpad
@@ -20,7 +26,7 @@ const held = new Set()
 const keyActions = new Map() // code -> fn, for one-shot keys (mode toggle, day/night...)
 let orbiting = false // right-drag fallback where pointer lock is refused
 let canvas = null
-const touch = { x: 0, z: 0, sprint: false }
+const touch = { x: 0, z: 0, sprint: false, hop: false }
 
 export const isLocked = () => !!canvas && document.pointerLockElement === canvas
 // Pointer lock can reject (sandboxed frame, post-Escape cooldown); that is not a fault.
@@ -45,10 +51,18 @@ function recomputeMove() {
   inputState.move.x = Math.max(-1, Math.min(1, x + touch.x))
   inputState.move.z = Math.max(-1, Math.min(1, z + touch.z))
   inputState.sprint = held.has('ShiftLeft') || held.has('ShiftRight') || touch.sprint
+  inputState.jumpHeld = held.has('Space') || touch.hop
+}
+
+// The touch HOP button held down (Wings glide).
+export function setTouchHop(on) {
+  touch.hop = on
+  recomputeMove()
 }
 
 // Joystick vector, each axis -1..1 (analog: a half tilt walks at half speed).
 export function setTouchMove(x, z) {
+  if ((x || z) && !touch.x && !touch.z) markControl()
   touch.x = x
   touch.z = z
   recomputeMove()
@@ -73,6 +87,7 @@ export function install(showMenu, canvasEl) {
       return
     }
     held.add(e.code)
+    if (CONTROL_KEYS.has(e.code)) markControl()
     if (e.code === 'Space') inputState.jump = true
     keyActions.get(e.code)?.()
     recomputeMove()
@@ -115,6 +130,7 @@ export function install(showMenu, canvasEl) {
     held.clear()
     orbiting = false
     inputState.jump = false
+    touch.hop = false
     recomputeMove()
   })
 }

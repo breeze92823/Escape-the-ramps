@@ -6,6 +6,7 @@ import { buildShowroom } from './showroom.js'
 import { buildWest } from './west.js'
 import { buildSouth } from './south.js'
 import { buildStages } from './stages.js'
+import { createObstacles } from './obstacles.js'
 import { updateFields } from '../effects.js'
 
 export { HUB } from './layout.js'
@@ -14,7 +15,7 @@ export { HUB } from './layout.js'
 // (bake.js) to keep draw calls low; animated pieces, signs and sparkle fields
 // stay live. Returns the gameplay hooks the main loop needs:
 //   prompts - interactables ({ x, z, r, title, action, kind, ... }) for the E prompt
-//   afk     - AFK ramp zones ({ x0, x1, z0, z1, mult })
+//   afk     - AFK ramp zones ({ x0, x1, z0, z1, mult, label, need = Rebirths to ride, gate = lock Group or null })
 //   boosts  - boost strip zones
 //   carPads - showroom pad meshes by car id (recoloured when owned)
 export function buildHub(scene) {
@@ -29,6 +30,7 @@ export function buildHub(scene) {
   buildWest(ctx)
   buildSouth(ctx)
   const stages = buildStages(ctx)
+  const obstacles = createObstacles(ctx)
 
   const baked = bake(statics, true)
   baked.traverse((o) => {
@@ -45,7 +47,9 @@ export function buildHub(scene) {
     winPads: ctx.winPads,
     gears: ctx.gears,
     rings: ctx.rings,
-    update(dt, elapsed) {
+    obstacles,
+    update(dt, elapsed, pz = 0) {
+      obstacles.update(dt, elapsed, pz)
       for (const fn of ctx.anim) fn(dt, elapsed)
       ctx.gears.update(dt, elapsed)
       updateFields(elapsed)

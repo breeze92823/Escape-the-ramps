@@ -1,10 +1,11 @@
-import { DoubleSide, ExtrudeGeometry, Group, Mesh, MeshStandardMaterial, Shape, ShapeGeometry } from 'three'
-import { AFK_RAMPS } from '../config.js'
+import { DoubleSide, ExtrudeGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, Shape, ShapeGeometry } from 'three'
+import { AFK_RAMPS, WINGS } from '../config.js'
 import { sign } from '../propkit.js'
 import { createSparkleField } from '../effects.js'
 import { buildDefaultCharacter } from '../avatar/character.js'
 import { cached, paintArrowPad, paintBands, paintLeaderboard, paintPlastic, paintWood, tex } from '../paint.js'
 import { HUB } from './layout.js'
+import { net, onNet } from '../net.js'
 import { carDisplay } from './center.js'
 import { block, box, cone, crowdBarrier, glowMat, gold, mat, place, solid, solidMesh, stanchions, stripGeometry, trophy, wheelIcon } from './kit.js'
 
@@ -88,7 +89,37 @@ function quarterPipe(ctx, r) {
   createSparkleField(live, { x: x0 - 5, y: 0.5, z: r.z, w: 12, d: w, height: top + 3, count: 36, color: '#ff8fd4', size: 0.7, speed: 1.3, seed: 100 + r.z, sparkle: false, intensity: 1.4 })
   createSparkleField(live, { x: x0 - 5, y: 1, z: r.z, w: 12, d: w, height: top + 2, count: 14, color: '#ffffff', size: 0.6, seed: 200 + r.z })
 
-  ctx.afk.push({ x0: xe - 1, x1: x0 + 0.5, z0, z1, mult: r.mult, label: r.label })
+  ctx.afk.push({ x0: xe - 1, x1: x0 + 0.5, z0, z1, mult: r.mult, label: r.label, need: r.rebirths ?? 0, gate: r.rebirths ? lockGate(ctx, r, x0, z0, z1) : null })
+}
+
+// A locked ramp's gate across its foot: see-through panel, glowing bars and a
+// "Rebirth N" sign. Hidden (main.js) once the player has enough Rebirths.
+function lockGate(ctx, r, x0, z0, z1) {
+  const g = new Group()
+  const gx = x0 + 0.4
+  const w = z1 - z0
+  const h = 3.4
+  const panel = new Mesh(new PlaneGeometry(w, h), new MeshBasicMaterial({ color: '#1a1024', transparent: true, opacity: 0.45, side: DoubleSide, depthWrite: false }))
+  panel.rotation.y = Math.PI / 2
+  panel.position.set(gx, h / 2, r.z)
+  g.add(panel)
+  for (const zz of [z0 + 0.25, z1 - 0.25]) block(g, mat('#2a2c33'), gx, 0, zz, 0.5, h + 0.4, 0.5)
+  // Barrier bars: red and white blocks, like a level crossing.
+  const n = 7
+  const seg = (w - 1) / n
+  for (const y of [0.8, 2.0, 3.2]) {
+    for (let i = 0; i < n; i++) {
+      block(g, (i + (y > 1.5 && y < 2.5 ? 1 : 0)) % 2 ? mat('#ffffff') : glowMat('#ff2a2a', 1.6), gx + 0.05, y, z0 + 0.5 + seg * (i + 0.5), 0.22, 0.42, seg, false)
+    }
+  }
+  const l = sign([
+    { text: 'LOCKED', size: 76, font: 'lucky', fill: ['#ff6a5a', '#d8101c'], outline: '#1a1024', ow: 14 },
+    { text: `Rebirth ${r.rebirths}`, size: 84, font: 'fredoka', fill: ['#ffffff', '#dfe6f2'], outline: '#1a1024', ow: 14 },
+  ], 3.0)
+  l.position.set(gx + 0.4, h + 1.9, r.z)
+  g.add(l)
+  ctx.live.add(g)
+  return g
 }
 
 function wingsPedestal(ctx) {
@@ -132,11 +163,42 @@ function wingsPedestal(ctx) {
     halves[1].rotation.y = -flap
   })
   createSparkleField(live, { x: P.x, y: 1.6, z: P.z, radius: 2, height: 4, count: 20, color: '#bdf2ff', size: 0.45, seed: 77 })
-  const l = sign([{ text: 'WINGS', size: 96, font: 'lucky', fill: ['#ffffff', '#dff4ff'], outline: '#1f4fd0' }], 1.8)
-  l.position.set(P.x, 6.2, P.z)
+  const price = `${WINGS.wins >= 1000 ? `${+(WINGS.wins / 1000).toFixed(1)}K` : WINGS.wins} WINS`
+  const l = sign([
+    { text: 'WINGS', size: 96, font: 'lucky', fill: ['#ffffff', '#dff4ff'], outline: '#1f4fd0' },
+    { text: `${WINGS.minutes} MIN GLIDE`, size: 30, font: 'pixel', fill: '#ffffff', outline: '#14141c', ow: 7 },
+    { text: price, size: 34, font: 'fredoka', fill: ['#fff27a', '#ffa21a'], outline: '#3a2410', ow: 8 },
+  ], 2.2)
+  l.position.set(P.x, 6.8, P.z)
   live.add(l)
-  ctx.prompts.push({ x: P.x, z: P.z, r: 6, title: 'WINGS', action: 'View', kind: 'info', text: 'Wings let you glide off ramps — coming soon!' })
+  ctx.prompts.push({ x: P.x, z: P.z, r: 6, title: `Wings (${WINGS.minutes} min, hold HOP to glide)`, action: `Buy (${price.toLowerCase()})`, kind: 'wings' })
 }
+
+// --- Leaderboards -------------------------------------------------------------------
+// Three boards fed by the server's `leaderboard` message (net.js): Wins, Speed, Playtime. The
+// panels are canvas textures repainted whenever a list arrives; the gold statues carry the names
+// of the top three Wins. Until the server answers (or when playing solo) the rows read "---".
+const BOARDS = [
+  { stat: 'wins', title: 'TOP WINS LEADERBOARD', accent: '#ffd23a' },
+  { stat: 'speed', title: 'TOP SPEED LEADERBOARD', accent: '#7fd4ff' },
+  { stat: 'playtime', title: 'PLAYTIME LEADERBOARD', accent: '#9dff7a' },
+]
+const compact = (n) => {
+  if (n < 1000) return String(Math.floor(n))
+  const u = ['K', 'M', 'B', 'T', 'Qa', 'Qi']
+  let i = -1
+  while (n >= 1000 && i < u.length - 1) {
+    n /= 1000
+    i++
+  }
+  return `${n >= 100 ? Math.floor(n) : n.toFixed(1).replace(/\.0$/, '')}${u[i]}`
+}
+const duration = (s) => {
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h ? `${h}h ${m}m` : `${m}m`
+}
+export const formatBoard = (stat, v) => (stat === 'playtime' ? duration(v) : compact(v))
 
 function leaderboards(ctx) {
   const { statics, live } = ctx
@@ -145,7 +207,7 @@ function leaderboards(ctx) {
   const z0 = B.zs[0] - 10
   const z1 = B.zs[B.zs.length - 1] + 8
   block(statics, wood, B.x - 1, 0, (z0 + z1) / 2, 7, 0.12, z1 - z0, false)
-  const titles = [['TOP WINS LEADERBOARD', '#ffd23a'], ['TOP SPEED LEADERBOARD', '#7fd4ff'], ['PLAYTIME LEADERBOARD', '#9dff7a']]
+  const textures = []
   B.zs.forEach((z, i) => {
     const g = place(statics, B.x, 0, z, Math.PI / 2)
     const frame = mat('#2a3350', { roughness: 0.6 })
@@ -156,12 +218,16 @@ function leaderboards(ctx) {
     board.rotation.x = -0.12
     g.add(board)
     block(board, frame, 0, 0, 0, 10.4, 6.8, 0.5)
-    const face = cached(`mat:lb:${i}`, () => new MeshStandardMaterial({ map: tex(paintLeaderboard(titles[i][0], titles[i][1], i + 3), { wrap: false }), roughness: 0.7, emissive: '#ffffff', emissiveIntensity: 0.06, emissiveMap: null }))
+    const canvas = paintLeaderboard(BOARDS[i].title, BOARDS[i].accent)
+    const map = tex(canvas, { wrap: false })
+    textures.push({ canvas, map })
+    const face = cached(`mat:lb:${i}`, () => new MeshStandardMaterial({ map, roughness: 0.7, emissive: '#ffffff', emissiveIntensity: 0.06, emissiveMap: null }))
     box(board, face, 0, 3.4, 0.27, 9.8, 6.3, 0.02, false)
     solid(B.x, 0, z, 1.4, 8, 10.6)
   })
   // Gold statues of the top players between the boards.
   const statueZ = [B.zs[0] - 7.5, (B.zs[0] + B.zs[1]) / 2, (B.zs[1] + B.zs[2]) / 2]
+  const nameSigns = []
   statueZ.forEach((z, i) => {
     block(statics, mat('#ffcf1f', { roughness: 0.4, metalness: 0.5 }), B.x, 0, z, 2.2, 0.5, 2.2)
     const fig = buildDefaultCharacter()
@@ -176,11 +242,34 @@ function leaderboards(ctx) {
     g.add(fig)
     const t = trophy(live, B.x, 4.4, z, 0.35)
     ctx.anim.push((dt) => (t.rotation.y += dt))
-    const n = sign([{ text: ['fizzy123816', 'RampKing', 'Turbo_77'][i], size: 40, font: 'fredoka', fill: '#ffffff', outline: '#14141c', ow: 7 }], 0.55)
-    n.position.set(B.x, 3.9, z)
-    live.add(n)
     solid(B.x, 0, z, 2.2, 3.2, 2.2)
+    nameSigns.push({ z, node: null })
   })
+  const setNames = (names) => {
+    nameSigns.forEach((n, i) => {
+      if (n.node) live.remove(n.node)
+      n.node = null
+      if (!names[i]) return
+      n.node = sign([{ text: names[i], size: 40, font: 'fredoka', fill: '#ffffff', outline: '#14141c', ow: 7 }], 0.55)
+      n.node.position.set(B.x, 3.9, n.z)
+      live.add(n.node)
+    })
+  }
+  setNames([])
+
+  const refresh = (lb) => {
+    BOARDS.forEach(({ stat, title, accent }, i) => {
+      const rows = (lb?.boards?.[stat] ?? []).map((r) => ({ name: r.name, value: formatBoard(stat, r.value) }))
+      const rank = lb?.ranks?.[stat]
+      paintLeaderboard(title, accent, rows, { footer: rank ? `YOUR RANK: #${rank}` : '', canvas: textures[i].canvas })
+      textures[i].map.needsUpdate = true
+    })
+    setNames((lb?.boards?.wins ?? []).slice(0, 3).map((r) => r.name))
+  }
+  refresh(net.leaderboard)
+  onNet('leaderboard', refresh)
+  // The Fredoka font may load after the first paint.
+  document.fonts?.ready?.then(() => refresh(net.leaderboard))
 }
 
 export function buildWest(ctx) {

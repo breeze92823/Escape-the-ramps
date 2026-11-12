@@ -1,11 +1,19 @@
 // Every tunable constant lives here; the rest of src/ holds no theme values.
 
 // --- Identity -------------------------------------------------------------
-export const GAME_SLUG = 'bowling-roll' // slug registered on bloxity.io
+export const GAME_SLUG = 'escape-the-ramps' // slug registered on bloxity.io
 export const GAME_TITLE = 'Escape the Ramps'
 
 // Forces the Bloxity SDK and avatar CDN to be treated as unavailable (see .env.example).
 export const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
+
+// --- Game server (Colyseus, ../Escape-the-ramps-backend) --------------------------
+// On Bloxity hosting the SDK resolves the endpoint itself; VITE_SERVER_URL_DEV / _MAIN override it
+// (see .env.example). `npm run dev` falls back to a local server on ws://localhost:2567.
+const SERVER_URL_DEV = import.meta.env.VITE_SERVER_URL_DEV || (import.meta.env.DEV ? 'ws://localhost:2567' : '')
+const SERVER_URL_MAIN = import.meta.env.VITE_SERVER_URL_MAIN || ''
+export const SERVER_URL = import.meta.env.MODE === 'production' ? SERVER_URL_MAIN : SERVER_URL_DEV
+export const NET = { retry: 10 } // s between connection attempts while the server is unreachable
 
 // --- World (metres: +X east, +Z south, +Y up) -------------------------------
 export const GROUND_Y = 0
@@ -294,6 +302,9 @@ export const TRUCK = {
 }
 export const NITRO = { duration: 5, cooldown: 6 } // s
 
+// Audio mix (audio.js): bus volumes 0..1.
+export const AUDIO = { master: 0.8, sfx: 0.75, music: 0.32, engine: 0.22, hazards: 1.0, hearRange: 80 } // hazards: positional hazard sound level; hearRange: m past which they are not played
+
 // Economy (game.js): what the HUD shows and how fast it grows.
 export const ECONOMY = {
   start: { wins: 0, gears: 17, gems: 0, speed: 131, level: 6, xp: 17 },
@@ -312,34 +323,60 @@ export const ECONOMY = {
 // Every truck: the starter, the two-row showroom (wins), the gem displays.
 // bonus = speed gained per tick while driving it.
 export const CARS = {
-  tiger: { name: 'Tiger', bonus: 1, wins: 0, paint: { base: '#ff8a1f', accent: '#5a2a8a', pattern: 'tiger', features: ['eyes'] } },
-  lion: { name: 'Lion', bonus: 5, wins: 10, paint: { base: '#e0a33a', accent: '#8a4a1c', pattern: 'patches', features: ['mane', 'ears'] } },
-  panda: { name: 'Panda', bonus: 25, wins: 100, paint: { base: '#f2f4f6', accent: '#2a2c33', pattern: 'patches', rim: '#2a2c33', features: ['ears', 'eyes'] } },
-  eagle: { name: 'Eagle', bonus: 40, wins: 500, paint: { base: '#ffcf2a', accent: '#d8401c', pattern: 'flames', features: ['beak', 'wings'] } },
-  pig: { name: 'Piggy', bonus: 50, gems: 29, paint: { base: '#ff9ccc', accent: '#ff6fb0', pattern: 'spots', rim: '#ff5aa5', rimLight: '#ffd1e8', features: ['ears', 'snout', 'eyes'] } },
-  shark: { name: 'Shark', bonus: 100, wins: 2500, paint: { base: '#2f8cff', accent: '#e8f2ff', pattern: 'stripes', features: ['fin', 'teeth'] } },
-  chicken: { name: 'Chicken', bonus: 250, wins: 10000, paint: { base: '#f4f6fa', accent: '#e8202a', pattern: 'plain', rim: '#e8202a', features: ['comb', 'eyes'] } },
-  cheetah: { name: 'Cheetah', bonus: 500, wins: 35000, paint: { base: '#f0a52a', accent: '#3a2410', pattern: 'spots', features: ['ears', 'eyes'] } },
-  croc: { name: 'Croc', bonus: 1000, wins: 100000, paint: { base: '#2fb84a', accent: '#1b6b2a', pattern: 'patches', features: ['spikes', 'teeth', 'eyes'] } },
-  wolf: { name: 'Wolf', bonus: 2000, wins: 250000, paint: { base: '#e6ebf2', accent: '#8a95a8', pattern: 'zigzag', features: ['ears', 'spikes'] } },
-  rhino: { name: 'Rhino', bonus: 4000, wins: 500000, paint: { base: '#4a5263', accent: '#2a3040', pattern: 'patches', features: ['rhinoHorn', 'ears'] } },
-  hornet: { name: 'Hornet', bonus: 7000, wins: 750000, paint: { base: '#1e1f26', accent: '#ffd21a', pattern: 'stripes', rim: '#ffd21a', features: ['horns', 'eyes'], horn: '#ffd21a' } },
-  frog: { name: 'Frog', bonus: 750, gems: 299, paint: { base: '#3cd23a', accent: '#1f8a2a', pattern: 'spots', features: ['frogEyes'] } },
-  bull: { name: 'Bull', bonus: 5000, gems: 499, paint: { base: '#1b1c22', accent: '#ff8a1a', pattern: 'flames', rim: '#d8202a', rimLight: '#ff5050', features: ['horns'] } },
+  tiger: { rarity: 'common', name: 'Tiger', bonus: 1, wins: 0, paint: { base: '#ff8a1f', accent: '#5a2a8a', pattern: 'tiger', features: ['eyes'] } },
+  lion: { rarity: 'common', name: 'Lion', bonus: 5, wins: 10, paint: { base: '#e0a33a', accent: '#8a4a1c', pattern: 'patches', features: ['mane', 'ears'] } },
+  panda: { rarity: 'common', name: 'Panda', bonus: 25, wins: 100, paint: { base: '#f2f4f6', accent: '#2a2c33', pattern: 'patches', rim: '#2a2c33', features: ['ears', 'eyes'] } },
+  eagle: { rarity: 'rare', name: 'Eagle', bonus: 40, wins: 500, paint: { base: '#ffcf2a', accent: '#d8401c', pattern: 'flames', features: ['beak', 'wings'] } },
+  pig: { rarity: 'exclusive', name: 'Piggy', bonus: 50, wins: 1000, paint: { base: '#ff9ccc', accent: '#ff6fb0', pattern: 'spots', rim: '#ff5aa5', rimLight: '#ffd1e8', features: ['ears', 'snout', 'eyes'] } },
+  shark: { rarity: 'rare', name: 'Shark', bonus: 100, wins: 2500, paint: { base: '#2f8cff', accent: '#e8f2ff', pattern: 'stripes', features: ['fin', 'teeth'] } },
+  chicken: { rarity: 'rare', name: 'Chicken', bonus: 250, wins: 10000, paint: { base: '#f4f6fa', accent: '#e8202a', pattern: 'plain', rim: '#e8202a', features: ['comb', 'eyes'] } },
+  cheetah: { rarity: 'epic', name: 'Cheetah', bonus: 500, wins: 35000, paint: { base: '#f0a52a', accent: '#3a2410', pattern: 'spots', features: ['ears', 'eyes'] } },
+  croc: { rarity: 'epic', name: 'Croc', bonus: 1000, wins: 100000, paint: { base: '#2fb84a', accent: '#1b6b2a', pattern: 'patches', features: ['spikes', 'teeth', 'eyes'] } },
+  wolf: { rarity: 'legendary', name: 'Wolf', bonus: 2000, wins: 250000, paint: { base: '#e6ebf2', accent: '#8a95a8', pattern: 'zigzag', features: ['ears', 'spikes'] } },
+  rhino: { rarity: 'mythic', name: 'Rhino', bonus: 4000, wins: 500000, paint: { base: '#4a5263', accent: '#2a3040', pattern: 'patches', features: ['rhinoHorn', 'ears'] } },
+  hornet: { rarity: 'secret', name: 'Hornet', bonus: 7000, wins: 750000, paint: { base: '#1e1f26', accent: '#ffd21a', pattern: 'stripes', rim: '#ffd21a', features: ['horns', 'eyes'], horn: '#ffd21a' } },
+  frog: { rarity: 'exclusive', name: 'Frog', bonus: 750, wins: 60000, paint: { base: '#3cd23a', accent: '#1f8a2a', pattern: 'spots', features: ['frogEyes'] } },
+  rabbit: { rarity: 'exclusive', name: 'White Rabbit', bonus: 700, daily: true, paint: { base: '#f6f7fb', accent: '#ff9ccc', pattern: 'spots', rim: '#ff9ccc', features: ['ears', 'eyes'] } },
+  bull: { rarity: 'exclusive', name: 'Bull', bonus: 5000, wins: 600000, paint: { base: '#1b1c22', accent: '#ff8a1a', pattern: 'flames', rim: '#d8202a', rimLight: '#ff5050', features: ['horns'] } },
 }
+// Car rarities: the Cars window's card colour and label (CARS[id].rarity).
+export const CAR_RARITY = {
+  common: { label: 'Common', color: '#7dff4a', card: ['#3fd65a', '#1fae3e'] },
+  rare: { label: 'Rare', color: '#5cd2ff', card: ['#3aa2f0', '#1f6fd0'] },
+  epic: { label: 'Epic', color: '#d08cff', card: ['#b14ae8', '#8a2ccf'] },
+  legendary: { label: 'Legendary', color: '#ff7aff', card: ['#e83ad8', '#b81fb0'] },
+  mythic: { label: 'Mythic', color: '#ffb02a', card: ['#ff9a1a', '#e8700a'] },
+  secret: { label: 'Secret', color: '#ff5a5a', card: ['#ee3a3a', '#c41f2a'] },
+  exclusive: { label: 'Exclusive', color: '#ffe14a', card: ['#ffd21a', '#ff9a12'] },
+}
+export const CAR_RARITY_ORDER = ['exclusive', 'common', 'rare', 'epic', 'legendary', 'mythic', 'secret']
+
 export const SHOWROOM_ROWS = [
   ['tiger', 'lion', 'panda', 'eagle', 'pig', 'shark'], // front (lower) tier, north -> south
   ['chicken', 'cheetah', 'croc', 'wolf', 'rhino', 'hornet'], // back (upper) tier
 ]
 
-// AFK quarter-pipes along the west edge, north -> south.
+// AFK quarter-pipes along the west edge, north -> south. `rebirths` = Rebirths
+// needed to ride it (a locked ramp has a gate at its foot). A ramp pays
+// mult x Speed Multi (= rebirths + 1) per afkTick, so each unlock is a real jump
+// for a player who just reached it: R1 3x = 6/s (vs 2/s on 1x), R2 5x = 15/s,
+// R4 15x = 75/s (vs 25/s on 5x), R6 30x = 210/s (vs 105/s on 15x).
 export const AFK_RAMPS = [
-  { mult: 1, label: '1x Speed', colors: ['#1f7dff', '#6cc4ff'], fill: ['#ffffff', '#cfd6e2'], z: -30 },
-  { mult: 3, label: '3x Speed', colors: ['#ffc81a', '#ff9a12'], fill: ['#ffe14a', '#ff9a12'], z: -16 },
-  { mult: 5, label: '5x SPEED', colors: ['#d92cff', '#9a2cf0'], fill: ['#ff7aff', '#b52cf0'], z: -2 },
-  { mult: 15, label: '15x SPEED', colors: ['#1fb84a', '#0d5f26'], fill: ['#7dff6a', '#18a83a'], z: 12 },
-  { mult: 30, label: '30x SPEED', colors: ['#ff2a3a', '#1a1a22'], fill: ['#ff5a4a', '#d8101c'], z: 26 },
+  { mult: 1, rebirths: 0, label: '1x Speed', colors: ['#1f7dff', '#6cc4ff'], fill: ['#ffffff', '#cfd6e2'], z: -30 },
+  { mult: 3, rebirths: 1, label: '3x Speed', colors: ['#ffc81a', '#ff9a12'], fill: ['#ffe14a', '#ff9a12'], z: -16 },
+  { mult: 5, rebirths: 2, label: '5x SPEED', colors: ['#d92cff', '#9a2cf0'], fill: ['#ff7aff', '#b52cf0'], z: -2 },
+  { mult: 15, rebirths: 4, label: '15x SPEED', colors: ['#1fb84a', '#0d5f26'], fill: ['#7dff6a', '#18a83a'], z: 12 },
+  { mult: 30, rebirths: 6, label: '30x SPEED', colors: ['#ff2a3a', '#1a1a22'], fill: ['#ff5a4a', '#d8101c'], z: 26 },
 ]
+// Auto ride (player.js rampStep): rolling onto an AFK ramp rides it by itself,
+// up to `height` x the ramp radius, back down onto the pad and up again. Any
+// control press (key, joystick, HOP, NITRO) hands the truck back to the player;
+// leaving the ramp and rolling on again re-arms it.
+export const AFK_AUTO = {
+  height: 0.72, // peak height as a share of the ramp radius (~74 degrees up the face)
+  push: 1.5, // engine push x TRUCK.accel while climbing
+  runout: 6, // m the truck may roll back onto the pad before it drives up again
+}
 
 // The stage lane north of the hub (stages.js): 20 stages, each a flat grass
 // plateau (an island) ending in a striped ramp that jumps a gap to the next
@@ -359,10 +396,10 @@ export const STAGES = {
   flat: (k) => 210 + k * 6, // m of lane before the ramp
   rampLen: 40,
   rise: (k) => 6 + k * 0.45, // m the ramp climbs to the next plateau
-  gapFrom: 4, easyMargin: 0.75,
+  gapFrom: 4, easyMargin: 0.75, edgeReach: 1.9, // m added to every gap: takeoff past the lip + the nose landing reach about 2 m past the formula (measured)
   needStat: (k) => levelSpeed(STAGES.recommended[k]), // Speed stat that clears stage k's gap
   needSpeed: (k) => TRUCK.topSpeed * speedFactor(STAGES.needStat(k)), // m/s that stat gives
-  gapMargin: 0.95, // the gap is this share of the ideal jump at needSpeed (~80% of the target Speed still clears)
+  gapMargin: 0.95, // the gap is this share of the ideal jump at needSpeed (about 80% of the target Speed still clears)
   thickness: 9, // plateau slab depth (floating islands)
   wins: [1, 5, 20, 50, 100, 200, 350, 600, 1000, 1600, 2500, 4000, 6000, 9000, 13000, 18000, 25000, 35000, 50000, 75000],
   finishWins: 250000,
@@ -382,3 +419,173 @@ export const STAGES = {
 export const speedFactor = (stat) => Math.max(1, Math.max(1, stat) / ECONOMY.start.speed) ** 0.12
 // Total Speed gained by the time a player reaches `level` (sum of the XP bar sizes).
 export const levelSpeed = (level) => ECONOMY.levelBase * (level - 1) + (ECONOMY.levelStep * level * (level - 1)) / 2
+
+// --- Windows (hud/windows.js) ------------------------------------------------------
+// Tuning: parts bought with gears (limited stock that restocks on the wall clock,
+// the same for everyone) or gems (no stock limit). Equipped parts add their % to
+// every Speed gain (game.state.tuning).
+export const TUNING = {
+  restockEvery: 300, // s
+  restockGems: 9, // the RESTOCK button
+  slots: 10, // equip slots to start with
+  maxSlots: 20,
+  slotGems: 15, // the green + buys one more slot
+  rarities: [
+    { id: 'common', label: 'COMMON', pct: 5, gears: 100, gems: 9, stock: 3 },
+    { id: 'uncommon', label: 'UNCOMMON', pct: 10, gears: 350, gems: 19, stock: 2 },
+    { id: 'rare', label: 'RARE', pct: 15, gears: 1500, gems: 39, stock: 1 },
+    { id: 'epic', label: 'EPIC', pct: 25, gears: 5000, gems: 79, stock: 1 },
+  ],
+  parts: {
+    oil: { name: 'Oil', rarity: 'common' },
+    plug: { name: 'Spark Plug', rarity: 'common' },
+    exhaust: { name: 'Exhaust', rarity: 'uncommon' },
+    tires: { name: 'Tires', rarity: 'uncommon' },
+    clutch: { name: 'Clutch', rarity: 'rare' },
+    turbo: { name: 'Turbo', rarity: 'rare' },
+    transmission: { name: 'Transmission', rarity: 'epic' },
+    engine: { name: 'V8 Engine', rarity: 'epic' },
+  },
+}
+// Rebirth r -> r + 1 needs Level levelReq(r), resets Level, XP and the Speed stat,
+// and multiplies every Speed gain by multi(r + 1). Skip keeps everything for gems.
+export const REBIRTH = {
+  levelReq: (r) => 15 + r * 10,
+  multi: (r) => r + 1,
+  skipGems: (r) => 14 + r * 10,
+}
+// Teleport window: stage k (1-based) is free once reached or once you have
+// wins[k - 1] wins; gems(k) teleports there right away.
+export const TELEPORT = {
+  wins: [0, 2, 10, 40, 70, 150, 300, 600, 1000, 1800, 3000, 5000, 8000, 12000, 18000, 26000, 38000, 55000, 80000, 120000],
+  gems: (k) => (k <= 1 ? 0 : k === 2 ? 3 : 5 * (k - 2)),
+}
+// Daily rewards: one claim per local day, 7-day streak (a missed day starts over).
+// Rewards: gears, wins, nitro (s added to the next nitro), boost (2x wins for min), car.
+export const DAILY = [
+  { gears: 300, label: '300 Gears', icons: ['gear'] },
+  { boost: 5, gears: 1000, label: '2x Wins 5 min<br>+1K Gears', icons: ['trophy', 'gear'], small: true },
+  { nitro: 10, label: '+10s Nitro', icons: ['nitro'] },
+  { gears: 5000, label: '5K Gears', icons: ['gear'] },
+  { wins: 5000, nitro: 20, label: '5K Wins<br>+20s Nitro', icons: ['trophy', 'nitro'], small: true },
+  { boost: 10, label: '2x Wins<br>10 min', icons: ['trophy'], small: true },
+  { car: 'rabbit', gears: 10000, wins: 10000, label: 'White Rabbit<br>10K Gears +<br>10K Wins', icons: ['gear', 'trophy'] },
+]
+
+// --- Hub power-ups (game.js buyVip / buyBalloons / buyWings) ------------------------
+// Prices in wins are SPENT (unlike trucks, which only need you to hold the wins).
+export const VIP = { wins: 25000 } // permanent: the magenta 2x WINS pads pay out
+// Balloons (a huge wins price, SPENT): gravity x gravityMul while airborne for `minutes` (buying again stacks time).
+export const BALLOONS = { wins: 100000, minutes: 5, gravityMul: 0.6 }
+// Wings: for `minutes`, hold HOP/Space in the air to glide: gravity x gravityMul and the
+// fall speed capped at glideFall m/s.
+export const WINGS = { wins: 2500, minutes: 5, gravityMul: 0.35, glideFall: 4 }
+// Gifting a tuning part to a player on the same server costs the rarity's gem price.
+export const GIFT = { cooldown: 2 } // s between gifts (the server enforces it too)
+
+// --- Stage obstacles (hub/obstacles.js) ---------------------------------------------
+// Each stage's lane gets hazards and surfaces, paced teach -> test -> twist -> rest:
+// a new mechanic first shows up alone and slow (with a NEW! sign), then harder,
+// then mixed with an older one, then a breather; stages 10 and 20 are "boss"
+// stages that mix everything so far. Entries are [type, count]; the slots are
+// spread evenly over the lane in order, skipping the win-pad area and the
+// last `clearBeforeRamp` m before the ramp, so every calibrated jump keeps a clean
+// run-up. Three steps of aggression:
+//  - stages 1-5: guardrails all the way, hazards only cost time;
+//  - from `edgesFrom`: the rail is open (red/white curbs) beside the hammers,
+//    sweepers, pistons, wrecking balls, mallets and conveyors, so a hit can
+//    throw the truck into the sea (back to the stage's last checkpoint);
+//  - from `crushDeathFrom`: crushers and mallets wreck the truck outright.
+export const STAGE_OBSTACLES = [
+  /* 1  rest   */ [['booster', 2]],
+  /* 2  teach  */ [['pendulum', 1]],
+  /* 3  test   */ [['pendulum', 2], ['booster', 1], ['pendulum', 1]],
+  /* 4  teach  */ [['booster', 1], ['sweeper', 1]],
+  /* 5  twist  */ [['pendulum', 1], ['sweeper', 1], ['pendulum', 1], ['sweeper', 1]],
+  /* 6  edges  */ [['bounce', 1], ['ice', 1], ['pendulum', 1], ['bumpers', 1]],
+  /* 7  teach  */ [['ice', 1], ['sweeper', 1], ['cannon', 1], ['pendulum', 1]],
+  /* 8  teach  */ [['crusher', 1], ['bounce', 1], ['blades', 1], ['crusher', 1]],
+  /* 9  teach  */ [['wreck', 1], ['booster', 1], ['geyser', 1], ['pendulum', 1]],
+  /* 10 boss   */ [['pendulum', 1], ['ice', 1], ['crusher', 1], ['wreck', 1], ['cannon', 1], ['bumpers', 1]],
+  /* 11 teach  */ [['bounce', 1], ['mallet', 1], ['narrow', 1]],
+  /* 12 teach  */ [['logs', 1], ['piston', 1], ['wind', 1], ['piston', 1]],
+  /* 13 teach  */ [['conveyor', 1], ['piston', 1], ['mallet', 1], ['bridge', 1], ['conveyor', 1]],
+  /* 14 teach  */ [['conveyor', 1], ['sweeper', 1], ['grinder', 1], ['wreck', 1], ['trapdoor', 1]],
+  /* 15 teach  */ [['mud', 1], ['wave', 1], ['mallet', 1], ['ice', 1], ['pendulum', 1]],
+  /* 16 rest   */ [['booster', 2], ['bounce', 2], ['pile', 1]],
+  /* 17 test   */ [['pendulum', 2], ['pistons4', 1], ['wreck', 1], ['narrow', 1]],
+  /* 18 twist  */ [['ice', 1], ['sweeper', 2], ['mallet', 1], ['crusher', 1], ['geyser', 1], ['blades', 1]],
+  /* 19 twist  */ [['conveyor', 1], ['pistons4', 1], ['wreck', 1], ['mallet', 1], ['logs', 1], ['bridge', 1]],
+  /* 20 boss   */ [['booster', 1], ['pendulum', 1], ['wind', 1], ['mallet', 1], ['wave', 1], ['wreck', 1], ['trapdoor', 1], ['cannon', 1], ['bumpers', 1], ['grinder', 1]],
+]
+// [a, b] pairs below go from a (stage 1) to b (stage 20) with OBSTACLE.ramp(k).
+export const OBSTACLE = {
+  laneStart: 26, // m after the stage start before the first slot
+  padClear: [12, 12], // m kept clear before the yellow pad / after the VIP pad
+  clearBeforeRamp: 40, // m before the ramp foot with no slots (the run-up)
+  boosterMinToRamp: 110, // boosters only this far from the ramp (they would beat the gap gate)
+  ramp: (k) => Math.min(1, (k - 1) / 18), // 0..1 difficulty within the world, scales speeds below
+  edgesFrom: 6, // open rail gaps beside knock-off hazards from this stage
+  edgeTypes: ['pendulum', 'sweeper', 'piston', 'pistons4', 'wreck', 'mallet', 'conveyor', 'bumpers', 'cannon', 'wind', 'geyser', 'logs'],
+  edgePad: 6, // m of open edge beyond the slot's footprint, each end
+  crushDeathFrom: 11, // crushers / mallets / pile drivers / the grinder wreck the truck from here
+  pendulum: { pivot: 13, arm: 11, amp: 0.95, period: [3.4, 1.5], headR: 1.25, headLen: 3.4, knock: [17, 27], lift: [7, 11], xs: [-14, 0, 14], desyncFrom: 10, desync: 0.16, doubleFrom: 15 },
+  sweeper: { arm: 11.5, h: 1.0, speed: [0.9, 2.2], knock: [15, 25], xs: [-12.5, 12.5], surgeFrom: 8, surgeEvery: 5, surgeTime: 1.1, surgeWarn: 0.8, reverseFrom: 14, reverseEvery: 4.5, highFrom: 16, highBar: 3.0 }, // h: low bar top (hop it); highBar: the high bar's height (don't hop)
+  crusher: { w: 15, d: 7, h: 4, lift: 9, xs: [-16, 0, 16], cycle: [4.2, 2.6], warn: [0.6, 0.32], fall: 0.16, down: 0.8, rise: 1.0, fakeFrom: 11, doubleFrom: 15 },
+  wave: { count: 5, spacing: 7.5, d: 6, delay: 0.3, cycle: [4.8, 3.8], warn: 0.4 }, // full-width crushers slamming in sequence (wave ~25 m/s)
+  pile: { xs: [-18, -6, 6, 18], r: 2.2, cycle: [2.0, 1.4], warn: 0.25 },
+  piston: { reach: [21, 27], d: 5, h: 2.4, cycle: [3.6, 2.1], warn: [0.55, 0.38], punch: [0.16, 0.08], hold: 0.6, back: 0.8, knock: [19, 29] },
+  mallet: { len: 15, headR: 2.2, headLen: 6, cycle: [4.0, 2.7], warn: 0.75, slam: 0.3, down: 0.55, rise: 1.2, shock: 8, shockKnock: 17 },
+  wreck: { pivot: 25, chain: 22, ballR: 2.7, amp: 0.6, period: [4.2, 2.9], knock: 22, side: 15, lift: 10, xs: [-10, 10] },
+  logs: { speed: [11, 17], r: 1.1, len: 15, xs: [-15, 0, 15], pause: 0.8, knock: 8 },
+  cannon: { cycle: [3.4, 2.3], speed: [24, 34], knock: [20, 27], warn: 0.7, ballR: 0.9 },
+  bumpers: { knock: [20, 28], layout: [[-14, 7], [-4, 2], [7, 6], [15, -3], [-8, -6]] },
+  grinder: { wallX: 7.6, rollerX: 6.0, r: 1.6, spin: 9 }, // channel between the roller surfaces = 2 * (rollerX - r)
+  blades: { rows: [-6, 0, 6], cols: [-15, -5, 5, 15], r: 1.6, speed: [2.2, 3.4] },
+  wind: { cycle: [5.0, 3.6], accel: [38, 55], blast: 1.6, spinUp: 1.0, down: 0.8, len: 12 }, // accel: m/s^2 sideways push during the blast
+  geyser: { xs: [-15, -5, 5, 15], r: 1.7, cycle: [3.6, 2.6], lift: [13, 17], warn: 0.8, burst: 0.7, height: 9 },
+  bridge: { half: 7, plank: 2, wobble: 0.35, back: 5 },
+  trapdoor: { cycle: [4.2, 3.0], warn: 0.7, openTime: 1.0, close: 0.4 },
+  narrow: { half: 10, bumpers: [[-4, 8], [4, -6]] },
+  ice: { len: 30, grip: 1.4 }, // grip: 1/s the slide lines up with the heading (normal ground is instant)
+  mud: { len: 26, w: 30, top: 0.55 }, // top: top-speed factor; only part of the width, so it can be dodged
+  conveyor: { len: 16, push: 9 }, // m/s sideways
+  bounce: { w: 9, len: 7, launch: 15 },
+  booster: { w: 8, len: 9 },
+  nearMiss: 1.6, // m beyond a hit that counts as a near miss
+  nearCooldown: 3, // s per obstacle
+}
+// Falling off an island: the truck drops (a camera cut down to the sea when the
+// island is high), splashes, sinks, and goes back to the start of the stage.
+export const FALL = { splashMaxDrop: 30, cutAfter: 0.3, cutHeight: 12, sink: 0.45, maxTime: 3.5, slowmo: 0.3 }
+// Wrecked (lethal crush): hit-stop, flattened for `pancake` s, then flying wheels
+// and panels, then the stage start after `respawn` s.
+export const WRECK = { hitStop: 0.09, pancake: 0.2, respawn: 0.75, debrisLife: 2.6 }
+// A stage cleared without dying (first try): bonus gears x stage; also no hits = FLAWLESS.
+export const BONUS = { noDeaths: 15, flawless: 25 }
+// Moving / shrinking stage rings (the gold hoop over each ramp end).
+export const RING = { moveFrom: 8, amp: 6.5, speed: 0.7, shrinkTo: 0.62 }
+
+// Stage runs (runs.js): timer from landing on a stage to landing on the next,
+// medals against a par time, falls counted per stage, a ghost of the best run.
+export const MEDALS = {
+  tiers: [
+    { id: 'bronze', label: 'Bronze', color: '#e0904a', par: 1.7, gears: 10 },
+    { id: 'silver', label: 'Silver', color: '#d8e0ea', par: 1.3, gears: 25 },
+    { id: 'gold', label: 'Gold', color: '#ffd21a', par: 1.0, gears: 60, gems: 1 },
+  ],
+  parSpeed: 0.92, // share of the stage's target speed a gold run averages
+  perObstacle: 0.7, // s added to par per hazard slot
+  ghostHz: 10, // ghost samples per second
+}
+// Game feel (main.js / camera.js).
+export const JUICE = {
+  ringSlowmo: { scale: 0.3, hold: 0.45, ease: 6 }, // time scale while flying through a ring
+  landShake: 0.05, // shake per unit of landing impact (player.landed, up to 8)
+  hitShake: 0.6,
+  slamShake: 0.35, // a crusher slamming nearby
+  shakeDecay: 7,
+  airMin: 1.1, // s airborne before an AIR bonus counts
+  airGears: 2, // gears per s of air, x stage
+  nearGears: 1, // gears per near miss, x stage
+}
