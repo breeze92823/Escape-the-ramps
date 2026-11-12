@@ -307,7 +307,8 @@ export const AUDIO = { master: 0.8, sfx: 0.75, music: 0.32, engine: 0.22, hazard
 
 // Economy (game.js): what the HUD shows and how fast it grows.
 export const ECONOMY = {
-  start: { wins: 0, gears: 17, gems: 0, speed: 131, level: 6, xp: 17 },
+  start: { wins: 0, gears: 0, gems: 0, speed: 1, level: 1, xp: 0 },
+  speedRef: 131, // Speed stat that counts as the 1.0x top-speed baseline (kept from the old start so tuning is unchanged)
   levelBase: 13, // xp to level up = levelBase + levelStep * level (level 6 -> 37, 7 -> 41)
   levelStep: 4,
   driveTick: 0.45, // s between "+N" speed gains while driving
@@ -416,7 +417,7 @@ export const STAGES = {
 }
 // Top speed grows with the Speed stat as a gentle power curve (x2 stat = +8.7% speed,
 // so +18% jump range), so speed packs, trucks and AFK all matter, evenly at every stage.
-export const speedFactor = (stat) => Math.max(1, Math.max(1, stat) / ECONOMY.start.speed) ** 0.12
+export const speedFactor = (stat) => Math.max(1, Math.max(1, stat) / ECONOMY.speedRef) ** 0.12
 // Total Speed gained by the time a player reaches `level` (sum of the XP bar sizes).
 export const levelSpeed = (level) => ECONOMY.levelBase * (level - 1) + (ECONOMY.levelStep * level * (level - 1)) / 2
 
