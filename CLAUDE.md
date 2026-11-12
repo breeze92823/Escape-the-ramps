@@ -8,7 +8,7 @@ The player drives a monster truck around the hub, rebuilt from the user's refere
 - Driving is in `player.js` (throttle/steer on the kinematic controller). AFK quarter-pipes are ridden as a 1-D arc (`rampStep`), not by the controller. Config: `TRUCK`, `NITRO`, `ECONOMY`, `CARS`, `SHOWROOM_ROWS`, `AFK_RAMPS` at the end of `config.js`.
 - Keys: WASD drive, Shift nitro, Space hop, E use prompt, R respawn, N day/night. Touch: joystick + NITRO/HOP.
 - Stage lane: `src/hub/stages.js` builds `STAGES.count` (20) plateaus north of the hub from `STAGES` in config (`stageLayout()` is the pure layout). Each: guardrails, arrows, gears (instanced, respawning), yellow `+N WINS / RETURN` pad and magenta VIP pad, balloons stand, SKIP STAGE board, striped ramp + ring + next stage sign. Harder per stage: longer, taller/steeper ramps, and from `gapFrom` a jump gap only a truck with `needStat(k)` Speed clears (= Speed earned by the stage sign's RECOMMENDED LEVEL, `levelSpeed`); top speed = `TRUCK.topSpeed * speedFactor(stat)` (power curve ^0.12). About 82% of the target clears without nitro, ~50% with a timed nitro (`nitroMul` 1.07). AFK ramps give ramp multiplier x Speed Multi per second (trucks don't multiply it); trucks multiply driving gains. main.js `updateStages` handles checkpoints (fall = back to that stage's start), pads, gears, ring bonuses. Past stage 20 is the YOU ESCAPED! finish.
-- `GAME_SLUG` is still `bowling-roll`: change it once the game's Bloxity slug is known.
+- `GAME_SLUG` is `escape-the-ramps` (the game folder name; used as the Bloxity game ID in CI).
 
 ## Older notes (from the Bowling Roll base)
 
