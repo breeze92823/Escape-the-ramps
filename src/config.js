@@ -499,26 +499,40 @@ export const GIFT = { cooldown: 2 } // s between gifts (the server enforces it t
 //  - from `crushDeathFrom`: crushers and mallets wreck the truck outright.
 export const STAGE_OBSTACLES = [
   /* 1  rest   */ [['booster', 2]],
-  /* 2  teach  */ [['pendulum', 1]],
-  /* 3  test   */ [['pendulum', 2], ['booster', 1], ['pendulum', 1]],
-  /* 4  teach  */ [['booster', 1], ['sweeper', 1]],
-  /* 5  twist  */ [['pendulum', 1], ['sweeper', 1], ['pendulum', 1], ['sweeper', 1]],
-  /* 6  edges  */ [['bounce', 1], ['ice', 1], ['pendulum', 1], ['bumpers', 1]],
-  /* 7  teach  */ [['ice', 1], ['sweeper', 1], ['cannon', 1], ['pendulum', 1]],
-  /* 8  teach  */ [['crusher', 1], ['bounce', 1], ['blades', 1], ['crusher', 1]],
-  /* 9  teach  */ [['wreck', 1], ['booster', 1], ['geyser', 1], ['pendulum', 1]],
-  /* 10 boss   */ [['pendulum', 1], ['ice', 1], ['crusher', 1], ['wreck', 1], ['cannon', 1], ['bumpers', 1]],
-  /* 11 teach  */ [['bounce', 1], ['mallet', 1], ['narrow', 1]],
-  /* 12 teach  */ [['logs', 1], ['piston', 1], ['wind', 1], ['piston', 1]],
-  /* 13 teach  */ [['conveyor', 1], ['piston', 1], ['mallet', 1], ['bridge', 1], ['conveyor', 1]],
-  /* 14 teach  */ [['conveyor', 1], ['sweeper', 1], ['grinder', 1], ['wreck', 1], ['trapdoor', 1]],
-  /* 15 teach  */ [['mud', 1], ['wave', 1], ['mallet', 1], ['ice', 1], ['pendulum', 1]],
-  /* 16 rest   */ [['booster', 2], ['bounce', 2], ['pile', 1]],
-  /* 17 test   */ [['pendulum', 2], ['pistons4', 1], ['wreck', 1], ['narrow', 1]],
-  /* 18 twist  */ [['ice', 1], ['sweeper', 2], ['mallet', 1], ['crusher', 1], ['geyser', 1], ['blades', 1]],
-  /* 19 twist  */ [['conveyor', 1], ['pistons4', 1], ['wreck', 1], ['mallet', 1], ['logs', 1], ['bridge', 1]],
-  /* 20 boss   */ [['booster', 1], ['pendulum', 1], ['wind', 1], ['mallet', 1], ['wave', 1], ['wreck', 1], ['trapdoor', 1], ['cannon', 1], ['bumpers', 1], ['grinder', 1]],
+  /* 2  teach  */ [['pendulum', 1], ['mines', 1]],
+  /* 3  test   */ [['pendulum', 1], ['booster', 1], ['spikes', 1], ['pendulum', 1]],
+  /* 4  teach  */ [['booster', 1], ['laser', 1], ['sweeper', 1]],
+  /* 5  twist  */ [['pendulum', 1], ['laser', 1], ['risky', 1], ['sweeper', 1]],
+  /* 6  edges  */ [['turret', 1], ['ice', 1], ['pendulum', 1], ['bumpers', 1]],
+  /* 7  teach  */ [['crumble', 1], ['sweeper', 1], ['cannon', 1], ['turntable', 1], ['turret', 1]],
+  /* 8  teach  */ [['crusher', 1], ['flames', 1], ['blades', 1], ['mines', 1]],
+  /* 9  teach  */ [['wreck', 1], ['tesla', 1], ['smoke+mines', 1], ['geyser', 1]],
+  /* 10 boss   */ [['pendulum', 1], ['ice', 1], ['bossTower', 1], ['cannon', 1], ['bumpers', 1]],
+  /* 11 teach  */ [['bounce', 1], ['mallet', 1], ['seesaw', 1], ['narrow', 1]],
+  /* 12 teach  */ [['logs', 1], ['missiles', 1], ['wind', 1], ['fakewall', 1], ['piston', 1]],
+  /* 13 dark   */ [['conveyor', 1], ['laser', 1], ['mallet', 1], ['bridge', 1], ['rammers', 1]],
+  /* 14 teach  */ [['conveyor', 1], ['crane', 1], ['grinder', 1], ['tesla', 1], ['trapdoor', 1]],
+  /* 15 teach  */ [['mud', 1], ['wave', 1], ['boulder', 1], ['mines+ice', 1]],
+  /* 16 chase  */ [['booster', 2], ['spikes', 1], ['turret', 1], ['pile', 1]],
+  /* 17 test   */ [['pendulum', 1], ['turntable', 1], ['pistons4', 1], ['fakefloor', 1], ['flames', 1]],
+  /* 18 lava   */ [['ice', 1], ['sweeper', 1], ['laser+conveyor', 1], ['tesla', 1], ['missiles', 1]],
+  /* 19 chase  */ [['conveyor', 1], ['pistons4', 1], ['mines+conveyor', 1], ['crumble', 1], ['rammers', 1], ['turret', 1]],
+  /* 20 boss   */ [['booster', 1], ['wind', 1], ['bossRobot', 1], ['mallet', 1], ['trapdoor', 1], ['missiles', 1], ['smoke+blades', 1], ['grinder', 1]],
 ]
+// Hazards over the gap AFTER stage k's ramp (gaps.js), and whole-stage
+// modifiers on stage k: `landing` (shifting panels where you land), `breakRamp`
+// (the ramp crumbles if you dawdle on it), `chaser` (a wrecker truck hunts
+// you), `flood` (lava pours down the lane behind you), `dark` (lights out).
+export const GAP_HAZARDS = {
+  5: ['gapWind'], 8: ['gapDrones'], 11: ['gapLaser'], 14: ['gapBlades'], 15: ['gapWind'],
+  17: ['gapDrones', 'gapWind'], 18: ['gapLaser'], 19: ['gapBlades'], 20: ['gapLaser', 'gapDrones'],
+}
+export const STAGE_MODS = {
+  12: ['breakRamp'], 13: ['dark'], 16: ['chaser', 'landing'], 17: ['breakRamp'], 18: ['flood'], 19: ['chaser', 'landing'],
+}
+// Danger streak (main.js): every near miss raises the gear multiplier by `step`
+// (up to `max` steps); a hit resets it.
+export const DANGER = { step: 0.5, max: 5 }
 // [a, b] pairs below go from a (stage 1) to b (stage 20) with OBSTACLE.ramp(k).
 export const OBSTACLE = {
   laneStart: 26, // m after the stage start before the first slot
@@ -527,9 +541,9 @@ export const OBSTACLE = {
   boosterMinToRamp: 110, // boosters only this far from the ramp (they would beat the gap gate)
   ramp: (k) => Math.min(1, (k - 1) / 18), // 0..1 difficulty within the world, scales speeds below
   edgesFrom: 6, // open rail gaps beside knock-off hazards from this stage
-  edgeTypes: ['pendulum', 'sweeper', 'piston', 'pistons4', 'wreck', 'mallet', 'conveyor', 'bumpers', 'cannon', 'wind', 'geyser', 'logs'],
+  edgeTypes: ['pendulum', 'sweeper', 'piston', 'pistons4', 'wreck', 'mallet', 'conveyor', 'bumpers', 'cannon', 'wind', 'geyser', 'logs', 'mines', 'rammers', 'crane', 'turntable', 'seesaw'],
   edgePad: 6, // m of open edge beyond the slot's footprint, each end
-  crushDeathFrom: 11, // crushers / mallets / pile drivers / the grinder wreck the truck from here
+  crushDeathFrom: 1, // crushers / mallets / pile drivers / the grinder wreck the truck from here (every stage: crushed = dead)
   pendulum: { pivot: 13, arm: 11, amp: 0.95, period: [3.4, 1.5], headR: 1.25, headLen: 3.4, knock: [22, 32], lift: [7, 13], xs: [-14, 0, 14], desyncFrom: 10, desync: 0.16, doubleFrom: 15 },
   sweeper: { arm: 11.5, h: 1.0, speed: [0.9, 2.2], knock: [15, 25], xs: [-12.5, 12.5], surgeFrom: 8, surgeEvery: 5, surgeTime: 1.1, surgeWarn: 0.8, reverseFrom: 14, reverseEvery: 4.5, highFrom: 16, highBar: 3.0 }, // h: low bar top (hop it); highBar: the high bar's height (don't hop)
   crusher: { w: 15, d: 7, h: 4, lift: 9, xs: [-16, 0, 16], cycle: [4.2, 2.6], warn: [0.6, 0.32], fall: 0.16, down: 0.8, rise: 1.0, fakeFrom: 11, doubleFrom: 15 },
@@ -553,6 +567,35 @@ export const OBSTACLE = {
   conveyor: { len: 16, push: 9 }, // m/s sideways
   bounce: { w: 9, len: 7, launch: 15 },
   booster: { w: 8, len: 9 },
+  // --- Weapons (weapons.js) ---
+  laser: { cycle: [3.4, 2.4], on: [1.5, 1.25], warn: 0.6, spacing: 6, low: 0.9, high: 3.25, knock: [12, 18], altFrom: 5, sweepFrom: 12, sweepSpeed: [0.6, 0.95], gridFrom: 16, gridStep: [1.6, 1.15] }, // low beam: hop it; high beam: don't hop
+  turret: { cycle: [3.4, 2.1], aim: [1.3, 0.75], speed: [26, 40], range: 80, lead: [0.25, 0.75], turn: 2.6 },
+  mines: { count: [5, 12], len: 24, r: 0.85, blast: 4.8, knock: [13, 19], lift: [9, 13], fuse: 0.22, respawn: 7, hiddenFrom: 13, reveal: 10, chainFrom: 9, chain: 7.5, chainDelay: 0.22 },
+  missiles: { cycle: [3.6, 2.4], lock: 0.9, flight: [1.7, 1.25], blast: 5.5, kill: 2.1, knock: [15, 21], lift: 12, lead: [0.8, 1.1], zone: 46, twinFrom: 18 },
+  flames: { cycle: [3.2, 2.2], warn: 0.75, burn: [1.1, 1.5], reach: 17, slow: 0.55, burnTime: 2.4, crossFrom: 17 },
+  tesla: { cycle: [3.2, 2.1], on: [1.0, 1.3], warn: 0.6, noSteer: 1.1, keep: 0.5, knock: 8, xs: [-24.5, -12, 0, 12, 24.5], h: 1.7 },
+  spikes: { cycle: [2.9, 2.0], warn: 0.45, flat: 3.2, pull: 0.55, top: 0.72, rows: [-4, 4] },
+  // --- Enemies (enemies.js) ---
+  rammers: { speed: [18, 27], cycle: [5.2, 3.6], warn: 1.3, knock: [22, 30], lanes: [-5, 5] },
+  crane: { zone: 26, speed: [5, 8.5], charge: [1.5, 1.0], lift: 15, fling: 21 },
+  boulder: { speed: [15, 21], r: 3.0, accel: 9, steer: 1.2 },
+  bossTower: { cycle: [2.8, 2.2], burst: 3, gap: 0.2, speed: 34, sweep: 0.9, sweepR: 19 },
+  bossRobot: { cycle: [3.2, 2.4], aim: 1.15, slam: 0.2, down: 0.7, shock: 9, shockKnock: 18, lead: 0.55, eyeSpeed: 0.8 },
+  // --- Floors and terrain (floors.js) ---
+  crumble: { wobble: 0.45, back: 6 },
+  seesaw: { stiff: 1.6, damp: 1.1, push: 0.018, max: 0.17, slide: 0.85 },
+  turntable: { r: 12, spin: [0.55, 1.05], knock: [12, 17] },
+  smoke: { len: 30 },
+  fakefloor: { fakes: 3 },
+  // --- Gaps and stage modifiers (gaps.js) ---
+  gapLaser: { cycle: [3.4, 2.8], on: [1.3, 1.4], warn: 0.7 },
+  gapBlades: { R: 15, spin: [1.0, 1.35], knock: 10 },
+  gapDrones: { count: 3, speed: [7, 10.5], knock: 9 },
+  gapWind: { accel: [9, 15], cycle: 5.5, warn: 1.0 },
+  landing: { depth: 14, panels: 7, window: 3, step: [1.7, 1.3], warn: 0.55 },
+  breakRamp: { hold: 1.7, down: 4.5 },
+  chaser: { delay: 2.2, speed: [0.74, 0.8], accel: 16, catch: 3.3 }, // speed: share of the stage's target speed
+  flood: { delay: 1.2, speed: [0.44, 0.48] }, // lava front speed: share of the stage's target speed
   nearMiss: 1.6, // m beyond a hit that counts as a near miss
   nearCooldown: 3, // s per obstacle
 }

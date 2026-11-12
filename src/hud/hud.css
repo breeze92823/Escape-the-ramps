@@ -679,6 +679,31 @@
 .run-chip.show {
   display: flex;
 }
+/* Danger streak chip (inside the run chip): hotter (redder) the higher the streak. */
+.danger-chip {
+  display: none;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  padding: calc(4 * var(--u)) calc(16 * var(--u));
+  border-radius: calc(30 * var(--u));
+  background: linear-gradient(90deg, rgb(255 170 30 / 0.9), rgb(255 calc(170 - 140 * var(--heat, 0)) 30 / 0.95));
+  font-size: 0.85em;
+  box-shadow: 0 0 calc(18 * var(--u)) rgb(255 90 30 / calc(0.3 + 0.5 * var(--heat, 0)));
+}
+.danger-chip.show {
+  display: inline-flex;
+}
+.danger-chip .dc-l {
+  font-size: 0.75em;
+  letter-spacing: 0.08em;
+}
+.danger-chip.pulse {
+  animation: danger-pulse 0.35s ease-out;
+}
+@keyframes danger-pulse {
+  0% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
 /* AFK auto ride banner (the run chip never shows in the hub, so it shares the spot). */
 .auto-ride {
   position: absolute;

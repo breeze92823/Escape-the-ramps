@@ -113,7 +113,10 @@ export function removeBody(body) {
 // First fixed collider hit between two points, as a 0..1 fraction of the
 // segment (1 = clear). Crates, balls and the player never block it.
 const STATIC_ONLY = () => RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
-export function segmentClear(ax, ay, az, bx, by, bz) {
+const NO_DYNAMIC = () => RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
+// `self` (a kinematic body, the player): also count moving kinematic floors
+// (the seesaw) as ground, ignoring that body itself.
+export function segmentClear(ax, ay, az, bx, by, bz, self = null) {
   if (!world) return 1
   const dx = bx - ax
   const dy = by - ay
@@ -121,7 +124,7 @@ export function segmentClear(ax, ay, az, bx, by, bz) {
   const len = Math.hypot(dx, dy, dz)
   if (len < 1e-4) return 1
   const r = new RAPIER.Ray({ x: ax, y: ay, z: az }, { x: dx / len, y: dy / len, z: dz / len })
-  const hit = world.castRay(r, len, true, STATIC_ONLY())
+  const hit = self ? world.castRay(r, len, true, NO_DYNAMIC(), undefined, undefined, self) : world.castRay(r, len, true, STATIC_ONLY())
   if (!hit) return 1
   return (hit.timeOfImpact ?? hit.toi) / len
 }

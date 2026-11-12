@@ -31,6 +31,13 @@ export const player = {
   belt: { x: 0, z: 0 }, // conveyor push, m/s
   knock: { x: 0, z: 0 }, // hazard shove, m/s, decays
   stun: 0, // s of no control left (squashed)
+  noSteer: 0, // s of dead steering left (tesla zap)
+  burn: 0, // s left on fire (flamethrower): top speed x burnTop
+  burnTop: 1,
+  flat: 0, // s left on a flat tyre (spike strip): pulls sideways, top speed x flatTop
+  pull: 0, // steering pull of the flat tyre (-1..1)
+  flatTop: 1,
+  spinW: 0, // rad/s the floor under the truck turns it (turntable)
   frozen: false, // held in place (sinking in the sea, wrecked): no physics until the next reset
   // Power-ups (main.js sets these each frame from game.js).
   gravityMul: 1, // airborne gravity factor (Balloons)
@@ -115,6 +122,7 @@ export function resetPlayer(spawn = SPAWN, facing = SPAWN_FACING) {
   player.position.z = prev.z = player.renderPosition.z = spawn.z
   player.velocity.x = player.velocity.y = player.velocity.z = 0
   player.speed = player.steer = player.boost = player.stun = 0
+  player.noSteer = player.burn = player.flat = player.pull = player.spinW = 0
   player.frozen = false
   player.knock.x = player.knock.z = player.belt.x = player.belt.z = 0
   drive.x = drive.z = 0
@@ -248,11 +256,17 @@ function step(dt) {
   }
 
   player.stun = Math.max(0, player.stun - dt)
+  player.noSteer = Math.max(0, player.noSteer - dt)
+  player.burn = Math.max(0, player.burn - dt)
+  player.flat = Math.max(0, player.flat - dt)
   const stunned = player.stun > 0
   const throttle = stunned ? 0 : inputState.move.z
-  const steerIn = stunned ? 0 : inputState.move.x
+  // A zap kills the steering; a flat tyre drags the truck to one side.
+  let steerIn = stunned || player.noSteer > 0 ? 0 : inputState.move.x
+  if (player.flat > 0) steerIn = Math.max(-1, Math.min(1, steerIn + player.pull))
   player.boost = Math.max(0, player.boost - dt)
-  const top = TRUCK.topSpeed * player.topMul * (player.nitro ? TRUCK.nitroMul : 1) * (player.boost > 0 ? TRUCK.boostMul : 1) * player.surfTop
+  const hurt = (player.burn > 0 ? player.burnTop : 1) * (player.flat > 0 ? player.flatTop : 1)
+  const top = TRUCK.topSpeed * player.topMul * (player.nitro ? TRUCK.nitroMul : 1) * (player.boost > 0 ? TRUCK.boostMul : 1) * player.surfTop * hurt
   let target = throttle > 0 ? throttle * top : throttle < 0 ? throttle * TRUCK.reverseSpeed : 0
   if ((player.nitro || player.boost > 0) && throttle >= 0 && !stunned) target = Math.max(target, top * 0.85)
   if (player.grounded) {
@@ -266,6 +280,7 @@ function step(dt) {
   const turnK = Math.min(1, Math.abs(player.speed) / TRUCK.fullTurnSpeed) / (1 + Math.abs(player.speed) / 45)
   const dir = player.speed >= 0 ? 1 : -1
   player.facing -= player.steer * TRUCK.turnRate * turnK * dir * dt * (player.grounded ? 1 : 0.5)
+  if (player.grounded) player.facing += player.spinW * dt // a turntable turns the truck with it
   // On ice the engine's velocity only slowly lines up with the heading (the truck slides).
   const hx = Math.sin(player.facing) * player.speed
   const hz = Math.cos(player.facing) * player.speed
@@ -334,7 +349,7 @@ function step(dt) {
     const fx = t0.x + moved.x + (desired.x / h0) * PLAYER_DIMS.radius * 0.6
     const fz = t0.z + moved.z + (desired.z / h0) * PLAYER_DIMS.radius * 0.6
     const feet = t0.y + moved.y - HALF
-    if (segmentClear(fx, feet + 0.25, fz, fx, feet - 0.45, fz) === 1) {
+    if (segmentClear(fx, feet + 0.25, fz, fx, feet - 0.45, fz, body) === 1) {
       const h = Math.hypot(desired.x, desired.z) || 1
       controller.computeColliderMovement(collider, { x: (-desired.x / h) * 0.06, y: Math.min(desired.y, -0.02), z: (-desired.z / h) * 0.06 }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)
       moved = controller.computedMovement()

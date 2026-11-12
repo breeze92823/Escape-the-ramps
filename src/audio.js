@@ -777,12 +777,120 @@ const HAZARD = {
     tone(t, 64, 0.4, { gain: 0.4 * k, slide: 40, dest: d })
     noise(t, 0.35, { filter: 'lowpass', freq: 420, gain: 0.3 * k, dest: d })
   },
+  // --- Weapons ---
+  // Laser fence arming: a rising chirp; powering on: a hard electric zing; off: a drop.
+  laserArm: (t, d, k) => {
+    tone(t, 900, 0.5, { type: 'square', gain: 0.04 * k, slide: 2400, cutoff: 4000, dest: d })
+    tone(t + 0.25, 1200, 0.25, { type: 'square', gain: 0.03 * k, slide: 2600, cutoff: 4000, dest: d })
+  },
+  laserOn: (t, d, k) => {
+    tone(t, 2400, 0.35, { type: 'sawtooth', gain: 0.07 * k, slide: 180, slideTime: 0.3, cutoff: 5000, dest: d })
+    noise(t, 0.12, { filter: 'highpass', freq: 4000, gain: 0.1 * k, dest: d })
+    tone(t, 110, 0.4, { type: 'square', gain: 0.06 * k, cutoff: 600, dest: d })
+  },
+  laserOff: (t, d, k) => tone(t, 600, 0.25, { type: 'sawtooth', gain: 0.04 * k, slide: 90, cutoff: 2000, dest: d }),
+  // Lock-on beep (turrets, mines).
+  beep: (t, d, k) => tone(t, 1760, 0.07, { type: 'square', gain: 0.05 * k, cutoff: 5000, dest: d }),
+  click: (t, d, k) => noise(t, 0.04, { freq: 3000, q: 4, gain: 0.25 * k, dest: d }),
+  // A buried mine popping up / re-arming: clunk and a two-note beep.
+  mineArm: (t, d, k) => {
+    noise(t, 0.08, { filter: 'lowpass', freq: 900, gain: 0.2 * k, dest: d })
+    tone(t + 0.08, 1320, 0.07, { type: 'square', gain: 0.04 * k, cutoff: 4000, dest: d })
+    tone(t + 0.18, 1760, 0.07, { type: 'square', gain: 0.04 * k, cutoff: 4000, dest: d })
+  },
+  // Plasma shot: a laser pew with a punchy body.
+  plasma: (t, d, k) => {
+    tone(t, 1600, 0.3, { type: 'sawtooth', gain: 0.12 * k, slide: 140, slideTime: 0.25, cutoff: 3500, dest: d })
+    tone(t, 220, 0.25, { type: 'square', gain: 0.12 * k, slide: 60, cutoff: 900, dest: d })
+    noise(t, 0.1, { filter: 'highpass', freq: 2500, gain: 0.12 * k, dest: d })
+  },
+  // A bolt bursting / a drone shorting out.
+  zapHit: (t, d, k) => {
+    noise(t, 0.18, { freq: 3200, q: 1.5, gain: 0.18 * k, dest: d })
+    tone(t, 900, 0.15, { type: 'square', gain: 0.05 * k, slide: 200, cutoff: 3000, dest: d })
+  },
+  // Explosions (mines, missiles, the boulder, stomps): boom, crack, debris patter.
+  explode: (t, d, k) => {
+    tone(t, 70, 1.3, { gain: 1.0 * k, slide: 22, slideTime: 0.9, dest: d })
+    noise(t, 1.4, { filter: 'lowpass', freq: 2200, freqTo: 60, gain: 0.8 * k, dest: d })
+    noise(t, 0.06, { freq: 2000, q: 0.7, gain: 0.45 * k, dest: d })
+    for (let i = 0; i < 6; i++) noise(t + 0.25 + Math.random() * 0.7, 0.05, { freq: 1400 + Math.random() * 2500, q: 3, gain: 0.08 * k, dest: d })
+  },
+  // Missile launcher locking on: a fast rising beep pattern.
+  lockOn: (t, d, k) => {
+    for (let i = 0; i < 5; i++) tone(t + i * 0.14, 1100 + i * 180, 0.08, { type: 'square', gain: 0.05 * k, cutoff: 5000, dest: d })
+  },
+  // Launch: whoosh + rocket roar.
+  missile: (t, d, k) => {
+    noise(t, 1.0, { freq: 600, freqTo: 2400, sweep: 0.5, q: 0.7, gain: 0.4 * k, attack: 0.04, dest: d })
+    noise(t, 0.8, { filter: 'lowpass', freq: 500, gain: 0.35 * k, dest: d })
+    tone(t, 90, 0.6, { type: 'sawtooth', gain: 0.08 * k, slide: 60, cutoff: 400, dest: d })
+  },
+  // Incoming: a falling whistle.
+  incoming: (t, d, k) => tone(t, 2400, 0.8, { gain: 0.09 * k, slide: 500, attack: 0.05, vibrato: 7, vibratoDepth: 25, dest: d }),
+  // Flamethrower ignition: whoomp and a roar burst.
+  ignite: (t, d, k) => {
+    noise(t, 0.4, { filter: 'lowpass', freq: 900, freqTo: 300, gain: 0.6 * k, attack: 0.02, dest: d })
+    noise(t, 0.7, { freq: 1500, q: 0.5, gain: 0.25 * k, attack: 0.05, dest: d })
+    tone(t, 80, 0.4, { gain: 0.35 * k, slide: 45, dest: d })
+  },
+  // Tesla coil charging up (rising hum) and the discharge crack.
+  teslaCharge: (t, d, k) => {
+    tone(t, 60, 0.6, { type: 'sawtooth', gain: 0.07 * k, slide: 240, cutoff: 1500, attack: 0.1, dest: d })
+    for (let i = 0; i < 6; i++) noise(t + i * 0.09, 0.03, { filter: 'highpass', freq: 5000, gain: 0.1 * k, dest: d })
+  },
+  zap: (t, d, k) => {
+    noise(t, 0.25, { freq: 4200, q: 0.6, gain: 0.4 * k, dest: d })
+    tone(t, 120, 0.3, { type: 'square', gain: 0.15 * k, cutoff: 2500, vibrato: 60, vibratoDepth: 600, dest: d })
+  },
+  // Spike strip springing up: metal snap and a ringing shing.
+  spikes: (t, d, k) => {
+    noise(t, 0.05, { freq: 2600, q: 2, gain: 0.35 * k, dest: d })
+    noise(t, 0.3, { freq: 6000, q: 5, gain: 0.08 * k, dest: d })
+    tone(t, 1900, 0.3, { type: 'triangle', gain: 0.04 * k, dest: d })
+  },
+  // --- Enemies ---
+  // Truck horn: two detuned square waves.
+  horn: (t, d, k) => {
+    tone(t, 311, 0.8, { type: 'square', gain: 0.09 * k, cutoff: 1800, hold: 0.5, dest: d })
+    tone(t, 370, 0.8, { type: 'square', gain: 0.08 * k, cutoff: 1800, hold: 0.5, dest: d })
+  },
+  rev: (t, d, k) => {
+    tone(t, 55, 0.8, { type: 'sawtooth', gain: 0.18 * k, slide: 140, slideTime: 0.6, cutoff: 600, dest: d })
+    noise(t, 0.6, { filter: 'lowpass', freq: 400, gain: 0.2 * k, dest: d })
+  },
+  squeal: (t, d, k) => noise(t, 0.7, { freq: 2600, q: 8, gain: 0.25 * k, attack: 0.03, dest: d }),
+  // Electromagnet grabbing: a heavy clunk and a surge.
+  magnet: (t, d, k) => {
+    tone(t, 60, 0.5, { type: 'square', gain: 0.25 * k, cutoff: 400, dest: d })
+    noise(t, 0.08, { freq: 1500, q: 1.2, gain: 0.35 * k, dest: d })
+    tone(t, 120, 0.6, { type: 'sawtooth', gain: 0.08 * k, slide: 480, cutoff: 1800, dest: d })
+  },
+  // Stone breaking up.
+  crumble: (t, d, k) => {
+    for (let i = 0; i < 8; i++) noise(t + i * 0.06 + Math.random() * 0.05, 0.12, { filter: 'lowpass', freq: 700 + Math.random() * 1200, gain: 0.22 * k, dest: d })
+    noise(t, 0.9, { filter: 'lowpass', freq: 300, gain: 0.3 * k, attack: 0.05, dest: d })
+  },
+  // A giant foot landing.
+  stomp: (t, d, k) => {
+    tone(t, 48, 1.4, { gain: 1.0 * k, slide: 20, slideTime: 1.0, dest: d })
+    noise(t, 0.9, { filter: 'lowpass', freq: 800, freqTo: 60, gain: 0.8 * k, dest: d })
+    tone(t, 140, 0.5, { type: 'square', gain: 0.08 * k, cutoff: 500, q: 6, dest: d })
+  },
+  // Big servo whine (robot legs lifting).
+  servo1: (t, d, k) => tone(t, 180, 0.8, { type: 'sawtooth', gain: 0.07 * k, slide: 420, slideTime: 0.6, cutoff: 1400, vibrato: 30, vibratoDepth: 20, dest: d }),
+  // One rise-and-fall of a siren.
+  siren1: (t, d, k) => tone(t, 600, 0.9, { type: 'sawtooth', gain: 0.06 * k, slide: 1200, slideTime: 0.45, cutoff: 2500, dest: d }),
+  // Driving through a hologram.
+  glitch: (t, d, k) => {
+    for (let i = 0; i < 6; i++) tone(t + i * 0.05, 300 + Math.random() * 2000, 0.05, { type: 'square', gain: 0.05 * k, cutoff: 5000, dest: d })
+  },
 }
 // One positional one-shot (obstacles.js events).
 // Small, frequent sounds (a row of hammers whooshing) get the shared slots
 // only while there is room and at most every MINOR_GAP s per kind; the big
 // ones (slams, booms, smashes) always have a few slots kept back for them.
-const MINOR = new Set(['whoosh', 'creak', 'hiss', 'shing', 'charge', 'bubble', 'alarm', 'fuse', 'whistle', 'fall'])
+const MINOR = new Set(['whoosh', 'creak', 'hiss', 'shing', 'charge', 'bubble', 'alarm', 'fuse', 'whistle', 'fall', 'beep', 'click', 'laserArm', 'laserOff', 'mineArm', 'zapHit', 'glitch', 'crack', 'servo1'])
 const MINOR_GAP = 0.09
 const typeLast = new Map()
 export function hazard(type, x, y, z, power = 1) {
@@ -806,14 +914,25 @@ export function hazard(type, x, y, z, power = 1) {
 
 // Machine loops: LOOP_VOICES voices (noise band + a motor tone, both panned),
 // handed each frame to the nearest running machines and retuned to their kind.
-const LOOP_VOICES = 4
+const LOOP_VOICES = 6
 const LOOPS = {
   motor: { nf: 520, q: 1.3, ng: 0.16, osc: 'sawtooth', hz: 62, cut: 420, og: 0.09 }, // sweeper
   fan: { nf: 330, q: 0.6, ng: 0.34, osc: 'sawtooth', hz: 38, cut: 260, og: 0.05 }, // wind cannon
   belt: { nf: 950, q: 2, ng: 0.07, osc: 'square', hz: 47, cut: 300, og: 0.07 }, // conveyor
   grind: { nf: 1300, q: 3, ng: 0.28, osc: 'sawtooth', hz: 86, cut: 1300, og: 0.14 }, // grinder rollers
   saw: { nf: 5200, q: 5, ng: 0.12, osc: 'sawtooth', hz: 1150, cut: 3200, og: 0.04 }, // saw blades
-  rumble: { nf: 200, q: 0.6, ng: 0.42, osc: 'sawtooth', hz: 33, cut: 150, og: 0.1 }, // rolling logs
+  rumble: { nf: 200, q: 0.6, ng: 0.42, osc: 'sawtooth', hz: 33, cut: 150, og: 0.1 }, // rolling logs, the boulder
+  laser: { nf: 3800, q: 6, ng: 0.03, osc: 'sawtooth', hz: 120, cut: 900, og: 0.05 }, // laser beams humming
+  servo: { nf: 1800, q: 3, ng: 0.05, osc: 'sawtooth', hz: 140, cut: 900, og: 0.04 }, // turret slewing
+  flame: { nf: 700, q: 0.5, ng: 0.5, osc: 'sawtooth', hz: 48, cut: 220, og: 0.08 }, // flamethrower roar
+  tesla: { nf: 4500, q: 1.2, ng: 0.12, osc: 'square', hz: 120, cut: 1600, og: 0.07 }, // tesla buzz
+  engine: { nf: 400, q: 1, ng: 0.2, osc: 'sawtooth', hz: 52, cut: 380, og: 0.14 }, // trucks
+  magnet: { nf: 240, q: 4, ng: 0.06, osc: 'square', hz: 60, cut: 300, og: 0.1 }, // electromagnet hum
+  siren: { nf: 1400, q: 8, ng: 0.02, osc: 'sawtooth', hz: 740, cut: 2400, og: 0.06 }, // the chaser (pitch swings)
+  robot: { nf: 160, q: 1.5, ng: 0.25, osc: 'sawtooth', hz: 38, cut: 200, og: 0.12 }, // the boss robot
+  drone: { nf: 2400, q: 3, ng: 0.06, osc: 'sawtooth', hz: 210, cut: 1800, og: 0.05 }, // quadcopters
+  lava: { nf: 180, q: 0.7, ng: 0.45, osc: 'sine', hz: 40, cut: 120, og: 0.12 }, // lava flood
+  creakLoop: { nf: 500, q: 6, ng: 0.06, osc: 'sawtooth', hz: 90, cut: 600, og: 0.04 }, // seesaw timbers
 }
 const loopVoices = []
 function buildLoopVoices() {
@@ -877,6 +996,33 @@ export function hazardLoops(list) {
     v.ng.gain.setTargetAtTime(L.ng * e.level, t, 0.08)
     v.og.gain.setTargetAtTime(L.og * e.level, t, 0.08)
   })
+}
+
+// The truck's own run-ins with the newer hazards.
+export function playerHit(kind) {
+  if (!live() || !gate('ph:' + kind, 0.25)) return
+  const t = ctx.currentTime
+  if (kind === 'zap') {
+    noise(t, 0.4, { freq: 3800, q: 0.7, gain: 0.35 })
+    tone(t, 90, 0.5, { type: 'square', gain: 0.12, cutoff: 2000, vibrato: 45, vibratoDepth: 900 })
+  } else if (kind === 'burn') {
+    noise(t, 0.6, { filter: 'lowpass', freq: 1200, freqTo: 400, gain: 0.4, attack: 0.02 })
+    noise(t + 0.1, 0.8, { filter: 'highpass', freq: 3000, gain: 0.12 })
+  } else if (kind === 'flat') {
+    noise(t, 0.08, { filter: 'lowpass', freq: 1800, gain: 0.6 })
+    noise(t + 0.06, 0.9, { filter: 'highpass', freq: 2500, freqTo: 1200, gain: 0.18, attack: 0.02 })
+  } else if (kind === 'grab') {
+    tone(t, 70, 0.6, { type: 'square', gain: 0.25, cutoff: 500 })
+    tone(t + 0.1, 200, 0.8, { type: 'sawtooth', gain: 0.08, slide: 900, cutoff: 2500 })
+  } else if (kind === 'blast') {
+    tone(t, 60, 1.4, { gain: 0.9, slide: 22, slideTime: 1 })
+    noise(t, 1.2, { filter: 'lowpass', freq: 2500, freqTo: 80, gain: 0.7 })
+    sting(1.4)
+  } else if (kind === 'melt') {
+    noise(t, 1.2, { filter: 'highpass', freq: 1500, freqTo: 600, gain: 0.35, attack: 0.03 })
+    tone(t, 140, 1.0, { type: 'sawtooth', gain: 0.1, slide: 40, cutoff: 900 })
+    sting(1.2)
+  }
 }
 
 // The truck itself: torn apart, and hitting the sea.
