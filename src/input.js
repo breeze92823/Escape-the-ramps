@@ -36,6 +36,10 @@ export function requestLock() {
   if (r instanceof Promise) r.catch(() => {})
 }
 
+export function releaseLock() {
+  if (isLocked()) document.exitPointerLock?.()
+}
+
 // Registers a one-shot key (fires on keydown, never on auto-repeat).
 export function onKey(code, fn) {
   keyActions.set(code, fn)

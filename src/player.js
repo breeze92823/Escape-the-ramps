@@ -43,7 +43,9 @@ export function knock(vx, vy, vz, { keep = 0.3, stun = 0 } = {}) {
   player.knock.x = vx
   player.knock.z = vz
   if (vy > 0) {
-    player.velocity.y = Math.max(player.velocity.y, vy)
+    // Already flying (thrown by one hazard into another): only a little more lift,
+    // so chained hits can't stack into a launch over the 2.4 m guardrails.
+    player.velocity.y = Math.max(player.velocity.y, player.grounded ? vy : vy * 0.4)
     player.grounded = false
     launched = true
   }
@@ -312,7 +314,10 @@ function step(dt) {
   const desired = { x: player.velocity.x * dt, y: player.velocity.y * dt, z: player.velocity.z * dt }
   // No autostep/snap in the air: a jump that falls short must hit the far
   // plateau's cliff and drop, not get stepped up (then launched) over its edge.
-  setAirborneController(!player.grounded || jumped)
+  // Same while a hazard is shoving the truck: thrown into a post or rail, it
+  // must bounce off, not autostep up onto the rail and over it.
+  const shoved = Math.hypot(player.knock.x, player.knock.z) > 6
+  setAirborneController(!player.grounded || jumped || shoved)
   controller.computeColliderMovement(collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)
   let moved = controller.computedMovement()
   const wasGrounded = player.grounded
@@ -340,7 +345,14 @@ function step(dt) {
   player.grounded = !jumped && !caughtEdge && controller.computedGrounded()
   player.landed = !wasGrounded && player.grounded ? Math.min(8, Math.max(0, -fallSpeed) * 0.5) : 0
 
-  if (player.grounded && !jumped) player.velocity.y = Math.max(-2, Math.min(30, moved.y / dt))
+  if (player.grounded && !jumped) {
+    let vy = Math.max(-2, Math.min(30, moved.y / dt))
+    // Touching down from the air never adds upward speed: a truck thrown into a
+    // post or rail corner gets slid up it by the controller, which would
+    // otherwise turn into a launch up and over the rail.
+    if (!wasGrounded || shoved) vy = Math.min(vy, Math.max(0, fallSpeed))
+    player.velocity.y = vy
+  }
   else if (player.velocity.y > 0 && moved.y < desired.y * 0.5) player.velocity.y = 0
 
   // Leaving a launch ramp's lip: take off at exactly the ramp's angle. The
