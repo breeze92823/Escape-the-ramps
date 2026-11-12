@@ -1,11 +1,13 @@
-import { CanvasTexture, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SRGBColorSpace, TorusGeometry } from 'three'
+import { Group, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry } from 'three'
 import { OBSTACLE, STAGE_OBSTACLES, STAGES } from '../config.js'
 import { neon, sign } from '../propkit.js'
 import { createSparkleField } from '../effects.js'
-import { RAPIER, addFixed, world } from '../physics.js'
-import { cached, makeCanvas, paintDiagonal, tex } from '../paint.js'
-import { mulberry32 } from '../textures.js'
 import { G, block, box, glowMat, mat, mesh, rod, solid } from './kit.js'
+import {
+  F, HIT_COOLDOWN, M, TRUCK_H, TRUCK_R, boxCollider, chevronMat, clamp01, decal, dropCollider, floorPlane, fxQ, gear, lethalAt, loopOf,
+  range, scrolling, sfx, shadowTex, smooth, soundQ, target,
+} from './hazardKit.js'
+import { NEW_BUILD, NEW_FOOT, NEW_HOLES, NEW_INTRO } from './hazards.js'
 
 // Stage hazards and surfaces (STAGE_OBSTACLES in config). Moving parts are
 // plain meshes animated from the clock; hits are tested analytically against
@@ -20,16 +22,6 @@ import { G, block, box, glowMat, mat, mesh, rod, solid } from './kit.js'
 // give way; `narrow` slots shrink the island to a strip with sea both sides.
 // From OBSTACLE.edgesFrom the rail is open beside knock-off hazards (`gaps`);
 // from crushDeathFrom crushes wreck the truck. Gears sit in the danger zones.
-
-const TRUCK_R = 1.3
-const TRUCK_H = 2.4
-const HIT_COOLDOWN = 0.6 // s before the same hazard can hit again (one hit per swing)
-const F = STAGES.fence
-const lerp = (a, b, t) => a + (b - a) * t
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
-const smooth = (v) => v * v * (3 - 2 * v)
-const range = (pair, k) => (Array.isArray(pair) ? lerp(pair[0], pair[1], OBSTACLE.ramp(k)) : pair)
-const lethalAt = (k) => k >= OBSTACLE.crushDeathFrom
 
 // Footprint (m along the lane) of one slot of each type.
 const FOOT = {
@@ -63,7 +55,7 @@ const HOLES = { bridge: 18, trapdoor: 16 } // slots that cut a hole this long in
 const INTRO = {
   pendulum: ['SWINGING HAMMERS', 'Time your run!'],
   sweeper: ['SPINNING SWEEPERS', 'HOP over the bar (Space)'],
-  crusher: ['CRUSHERS', 'They shake before they slam'],
+  crusher: ['CRUSHERS', 'Shake = about to slam. Crushed = dead!'],
   piston: ['PISTONS', 'They glow red before they punch'],
   pistons4: ['PISTON GAUNTLET', 'Four in a row!'],
   mallet: ['SMASH MALLETS', 'Get hit = truck wrecked!'],
@@ -71,7 +63,7 @@ const INTRO = {
   wave: ['CRUSHER WAVE', 'Floor it before it catches you!'],
   pile: ['PILE DRIVERS', 'Fast and deadly'],
   logs: ['ROLLING LOGS', 'Weave between them!'],
-  cannon: ['CANNONS', 'Listen for the fuse!'],
+  cannon: ['CANNONS', 'Listen for the fuse! One hit = boom'],
   bumpers: ['BUMPERS', 'They fire you away!'],
   grinder: ['THE GRINDER', 'Stay in the middle!'],
   blades: ['SAW BLADES', 'Watch the pattern'],
@@ -86,128 +78,12 @@ const INTRO = {
   bounce: ['BOUNCE PADS', 'Grab the gears up high!'],
   booster: ['BOOST PADS', 'Free speed!'],
 }
-
-// --- Sounds -------------------------------------------------------------------------------
-const soundQ = []
-const sfx = (type, x, y, z, k = 1) => soundQ.push({ type, x, y, z, k })
-const loopOf = (kind, x, y, z) => ({ kind, x, y, z, level: 0, pitch: 1 })
-
-// --- Removable colliders (bridge planks, trapdoors) ------------------------------------
-const boxCollider = (x, y, z, hx, hy, hz) => addFixed(RAPIER.ColliderDesc.cuboid(hx, hy, hz), { x, y, z })
-function dropCollider(c) {
-  if (c && world) world.removeCollider(c, true)
-}
-
-// --- Textures ------------------------------------------------------------------------
-function paintChevrons(fg, bg) {
-  const c = makeCanvas(128)
-  const x = c.getContext('2d')
-  x.fillStyle = bg
-  x.fillRect(0, 0, 128, 128)
-  x.fillStyle = fg
-  for (const y0 of [14, 70]) {
-    x.beginPath() // a chevron pointing to the top (texture +V)
-    x.moveTo(64, y0)
-    x.lineTo(118, y0 + 54)
-    x.lineTo(96, y0 + 54)
-    x.lineTo(64, y0 + 22)
-    x.lineTo(32, y0 + 54)
-    x.lineTo(10, y0 + 54)
-    x.closePath()
-    x.fill()
-  }
-  return c
-}
-function paintMud() {
-  const c = makeCanvas(256)
-  const x = c.getContext('2d')
-  x.fillStyle = '#5b3a1f'
-  x.fillRect(0, 0, 256, 256)
-  const r = mulberry32(77)
-  for (let i = 0; i < 90; i++) {
-    x.fillStyle = r() < 0.5 ? 'rgba(40,22,10,0.45)' : 'rgba(120,80,45,0.35)'
-    x.beginPath()
-    x.ellipse(r() * 256, r() * 256, 6 + r() * 22, 4 + r() * 14, r() * 3, 0, Math.PI * 2)
-    x.fill()
-  }
-  return c
-}
-// A soft dark disc: the telegraph shadow under a mallet's slam spot.
-function paintShadow() {
-  const c = makeCanvas(128)
-  const x = c.getContext('2d')
-  const g = x.createRadialGradient(64, 64, 4, 64, 64, 62)
-  g.addColorStop(0, 'rgba(10,0,0,0.95)')
-  g.addColorStop(0.7, 'rgba(60,0,0,0.6)')
-  g.addColorStop(1, 'rgba(60,0,0,0)')
-  x.fillStyle = g
-  x.fillRect(0, 0, 128, 128)
-  return c
-}
-function paintPlanks() {
-  const c = makeCanvas(256, 64)
-  const x = c.getContext('2d')
-  x.fillStyle = '#9a6a3a'
-  x.fillRect(0, 0, 256, 64)
-  const r = mulberry32(5)
-  for (let i = 0; i < 40; i++) {
-    x.strokeStyle = `rgba(60,35,15,${0.15 + r() * 0.25})`
-    x.beginPath()
-    const y = r() * 64
-    x.moveTo(0, y)
-    x.bezierCurveTo(80, y + (r() - 0.5) * 8, 170, y + (r() - 0.5) * 8, 256, y + (r() - 0.5) * 6)
-    x.stroke()
-  }
-  x.fillStyle = '#3a3f4a'
-  for (const px of [10, 246]) for (const py of [16, 48]) x.fillRect(px - 3, py - 3, 6, 6)
-  return c
-}
-const decal = { polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }
-const M = {
-  red: () => mat('#e8344e', { roughness: 0.45 }),
-  white: () => mat('#f2f4f8', { roughness: 0.5 }),
-  steel: () => mat('#7d8696', { roughness: 0.4, metalness: 0.6 }),
-  iron: () => mat('#3a3f4a', { roughness: 0.35, metalness: 0.75 }),
-  dark: () => mat('#2f3546', { roughness: 0.7 }),
-  wood: () => mat('#8a5a32', { roughness: 0.8 }),
-  log: () => mat('#6b4224', { roughness: 0.9 }),
-  rope: () => mat('#c9a66b', { roughness: 0.9 }),
-  hazard: () => cached('obs:hazard', () => new MeshStandardMaterial({ map: tex(paintDiagonal('#ffd21a', '#1c1c22', 256, 64, 24), { repeatX: 2 }), roughness: 0.6 })),
-  hazardFloor: () => cached('obs:hazardfloor', () => new MeshStandardMaterial({ map: tex(paintDiagonal('#ffd21a', '#1c1c22', 256, 64, 24), { repeatX: 3 }), roughness: 0.7, transparent: true, opacity: 0.85, ...decal })),
-  curb: () => cached('obs:curb', () => new MeshStandardMaterial({ map: tex(paintDiagonal('#e8203a', '#ffffff', 256, 64, 32), { repeatX: 12 }), roughness: 0.6 })),
-  ice: () => cached('obs:ice', () => new MeshStandardMaterial({ color: '#bfeaff', roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0.88, ...decal })),
-  mud: () => cached('obs:mud', () => new MeshStandardMaterial({ map: tex(paintMud(), { repeatX: 4, repeatY: 3 }), roughness: 1, ...decal })),
-  planks: () => cached('obs:planks', () => new MeshStandardMaterial({ map: tex(paintPlanks(), { wrap: false }), roughness: 0.85 })),
-  water: () => cached('obs:water', () => new MeshStandardMaterial({ color: '#8fe6ff', roughness: 0.1, transparent: true, opacity: 0.55, emissive: '#2a9ad8', emissiveIntensity: 0.3, depthWrite: false })),
-}
-const shadowTex = () => cached('obs:shadowtex', () => {
-  const t = new CanvasTexture(paintShadow())
-  t.colorSpace = SRGBColorSpace
-  return t
-})
-// Scrolling chevron textures (one per look), animated in update().
-const scrolling = []
-function chevronMat(key, fg, bg, repeatX, repeatY, glowing) {
-  return cached(`obs:chev:${key}`, () => {
-    const t = tex(paintChevrons(fg, bg), { repeatX, repeatY })
-    const m = glowing ? new MeshBasicMaterial({ map: t, toneMapped: false, ...decal }) : new MeshStandardMaterial({ map: t, roughness: 0.6, ...decal })
-    scrolling.push({ t, speed: glowing ? 2.4 : 1.1 })
-    return m
-  })
-}
-// A flat patch on the floor, sx by sz m (world x / z); `dir` turns the texture's
-// up (+V) from north (-Z): -PI/2 points it east (+X), PI/2 west.
-const planeGeo = new PlaneGeometry(1, 1)
-function floorPlane(parent, material, x, y, z, sx, sz, dir = 0) {
-  const m = new Mesh(planeGeo, material)
-  m.rotation.set(-Math.PI / 2, 0, dir)
-  const across = Math.abs(Math.sin(dir)) > 0.5
-  m.scale.set(across ? sz : sx, across ? sx : sz, 1)
-  m.position.set(x, y, z)
-  m.receiveShadow = true
-  parent.add(m)
-  return m
-}
+Object.assign(FOOT, NEW_FOOT)
+Object.assign(HOLES, NEW_HOLES)
+Object.assign(INTRO, NEW_INTRO)
+// A combo slot ('mines+ice') builds every part at the same spot: its footprint is the biggest part's.
+const parts = (type) => type.split('+')
+const footOf = (type) => Math.max(...parts(type).map((t) => FOOT[t]))
 
 // --- Layout -------------------------------------------------------------------------------
 // Pure: where stage s's slots go (`placed`: { type, z }), which stretches of
@@ -226,7 +102,7 @@ export function planObstacles(s, pz) {
   // would straddle the pads moves on to B. If that overflows, the gaps shrink.
   const lenA = aStart - aEnd
   const total = lenA + (bStart - bEnd)
-  const foot = items.reduce((a, t) => a + FOOT[t], 0)
+  const foot = items.reduce((a, t) => a + footOf(t), 0)
   let gap = Math.max(2, (total - foot) / (items.length + 1))
   let spans = []
   for (let tries = 0; tries < 8; tries++) {
@@ -234,9 +110,9 @@ export function planObstacles(s, pz) {
     let v = 0
     for (const type of items) {
       v += gap
-      if (v < lenA && v + FOOT[type] > lenA) v = lenA + Math.min(gap, 4)
+      if (v < lenA && v + footOf(type) > lenA) v = lenA + Math.min(gap, 4)
       spans.push([type, v])
-      v += FOOT[type]
+      v += footOf(type)
     }
     if (v <= total || gap <= 2) break
     gap = Math.max(2, gap - (v - total) / items.length)
@@ -247,14 +123,14 @@ export function planObstacles(s, pz) {
   const narrows = []
   for (let [type, v] of spans) {
     const start = v < lenA ? aStart - v : bStart - (v - lenA)
-    if (start - FOOT[type] < bEnd - 4) continue // no room left: drop it
-    const zc = start - FOOT[type] / 2
+    if (start - footOf(type) < bEnd - 4) continue // no room left: drop it
+    const zc = start - footOf(type) / 2
     if (type === 'booster' && zc - s.zr < OBSTACLE.boosterMinToRamp) type = 'bounce'
     placed.push({ type, z: zc })
     if (HOLES[type]) holes.push([zc + HOLES[type] / 2, zc - HOLES[type] / 2])
     if (type === 'narrow') narrows.push([zc + FOOT.narrow / 2, zc - FOOT.narrow / 2, OBSTACLE.narrow.half])
-    if ((s.k >= OBSTACLE.edgesFrom && OBSTACLE.edgeTypes.includes(type)) || HOLES[type] || type === 'narrow') {
-      const half = FOOT[type] / 2 + OBSTACLE.edgePad
+    if ((s.k >= OBSTACLE.edgesFrom && parts(type).some((t) => OBSTACLE.edgeTypes.includes(t))) || HOLES[type] || type === 'narrow') {
+      const half = footOf(type) / 2 + OBSTACLE.edgePad
       const g = [zc + half, zc - half]
       const last = gaps[gaps.length - 1]
       if (last && last[1] <= g[0] + 8) last[1] = Math.min(last[1], g[1]) // merge neighbours (no rail stubs)
@@ -293,7 +169,7 @@ export function buildObstacles(ctx, s, grp, plan) {
 
   // NEW! sign for a mechanic seen here for the first time, BOSS stages, and the
   // stage where the edges open.
-  const fresh = placed.map((p) => p.type).filter((t, i, a) => a.indexOf(t) === i && !ctx.seenTypes.has(t))
+  const fresh = placed.flatMap((p) => parts(p.type)).filter((t, i, a) => a.indexOf(t) === i && !ctx.seenTypes.has(t) && INTRO[t])
   for (const t of fresh) ctx.seenTypes.add(t)
   let intro = null
   if (s.k % 10 === 0) intro = ['BOSS STAGE!', 'Everything at once', true]
@@ -310,11 +186,10 @@ export function buildObstacles(ctx, s, grp, plan) {
     s.intro = `${title} ${tip}`
   }
 
-  for (const p of placed) BUILD[p.type](ctx, live, s, s.y, p.z)
+  for (const p of placed) for (const t of parts(p.type)) BUILD[t](ctx, live, s, s.y, p.z, footOf(p.type))
 }
 
 // --- Shared pieces ----------------------------------------------------------------------
-const gear = (ctx, x, y, z, k, gold = false) => ctx.gearSpots.push({ x, y, z, value: gold ? k * 5 : k, gold })
 
 // A slamming block (crushers, the crusher wave, pile drivers). Square (w x d)
 // or round (w = diameter). opts: C cycle, offset, warn, fall, down, rise,
@@ -946,7 +821,7 @@ const BUILD = {
       o.test = (pp) => {
         if (!o.flying) return null
         const d = Math.hypot(pp.x - o.bx, pp.y + TRUCK_H / 2 - (b + 1.4), pp.z - cz) - P.ballR
-        if (d < TRUCK_R) return { hit: true, vx: -side * knock, vy: 8, vz: 0, x: o.bx, y: b + 1.4, z: cz, power: 1.3, color: '#2a2e36' }
+        if (d < TRUCK_R) return { kill: 'shot', why: 'BLASTED!', vx: -side * knock, vy: 8, vz: 0, x: o.bx, y: b + 1.4, z: cz }
         return d < TRUCK_R + OBSTACLE.nearMiss ? { near: true, x: o.bx } : null
       }
       ctx.obstacles.push(o)
@@ -1339,6 +1214,8 @@ const BUILD = {
   },
 }
 
+Object.assign(BUILD, NEW_BUILD)
+
 // --- The system main.js drives -----------------------------------------------------
 export function createObstacles(ctx) {
   const obstacles = ctx.obstacles ?? []
@@ -1349,14 +1226,27 @@ export function createObstacles(ctx) {
   return {
     obstacles,
     surfaces,
-    // Animates only the stages near the player and hides far ones.
-    update(dt, t, pz) {
+    // Animates only the stages near the player and hides far ones. `pl` = the
+    // player (position, velocity, facing...) for the hazards that aim or chase.
+    update(dt, t, pz, pl) {
+      if (pl) {
+        target.p.x = pl.position.x
+        target.p.y = pl.position.y
+        target.p.z = pl.position.z
+        target.v.x = pl.velocity.x
+        target.v.y = pl.velocity.y
+        target.v.z = pl.velocity.z
+        target.facing = pl.facing
+        target.grounded = pl.grounded
+        target.speed = pl.speed
+        target.frozen = pl.frozen
+      }
       for (const g of groups) g.group.visible = pz < g.zMax + 380 && pz > g.zMin - 120
       for (const o of obstacles) if (Math.abs(o.z - pz) < 400) o.update(dt, t)
       for (const sc of scrolling) sc.t.offset.y = (sc.t.offset.y - dt * sc.speed) % 1
     },
     surfaceAt(x, y, z) {
-      for (const s of surfaces) if (x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1 && Math.abs(y - s.y) < 1) return s
+      for (const s of surfaces) if (x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1 && Math.abs(y - s.y) < 1 && (!s.round || Math.hypot(x - s.cx, z - s.cz) < s.round)) return s
       return null
     },
     // Hits / walls / pushes / near misses for the truck's feet position pp.
@@ -1373,7 +1263,7 @@ export function createObstacles(ctx) {
         if (r.near) {
           if (o.near > 0 || o.hitCd > 0) continue
           o.near = OBSTACLE.nearCooldown
-        } else if (r.hit) {
+        } else if (r.hit || r.zap || r.burn || r.flat || r.kill || r.grab) {
           if (o.hitCd > 0) continue // one hit per obstacle per swing
           o.hitCd = HIT_COOLDOWN
           o.near = OBSTACLE.nearCooldown // no CLOSE! bonus right after being hit
@@ -1389,6 +1279,24 @@ export function createObstacles(ctx) {
     // Cannons that fired / geysers that burst / geysers bubbling, this frame (visual fx).
     fx(pz) {
       return obstacles.filter((o) => Math.abs(o.z - pz) < 120 && (o.fired || o.started || o.bubbling))
+    },
+    // Hazard visual-effect events since the last call (hazardFx.js).
+    effects() {
+      const list = fxQ.slice()
+      fxQ.length = 0
+      return list
+    },
+    // Stage-wide modifiers under the player (darkness, smoke fog): the strongest wins.
+    ambience(pp) {
+      let dark = 0
+      let fog = 0
+      for (const a of ctx.ambience ?? []) {
+        if (pp.z > a.z1 || pp.z < a.z0 || Math.abs(pp.y - a.y) > 12) continue
+        const edge = Math.min(1, Math.min(a.z1 - pp.z, pp.z - a.z0) / (a.fade ?? 8))
+        if (a.dark) dark = Math.max(dark, a.dark * edge)
+        if (a.fog) fog = Math.max(fog, a.fog * edge)
+      }
+      return { dark, fog }
     },
     // Positional sound events since the last call (audio.hazard).
     sounds() {

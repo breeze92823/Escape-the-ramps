@@ -2,6 +2,7 @@ import {
   CanvasTexture,
   DoubleSide,
   ExtrudeGeometry,
+  Group,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -14,7 +15,9 @@ import {
   SRGBColorSpace,
   TorusGeometry,
 } from 'three'
-import { BALLOONS, PHYSICS, RING, STAGES, TRUCK, VIP } from '../config.js'
+import { BALLOONS, GAP_HAZARDS, PHYSICS, RING, STAGES, TRUCK, VIP } from '../config.js'
+import { RAPIER, addFixed } from '../physics.js'
+import { GAP_NAMES, LANDING_DEPTH, buildStageExtras, modsOf } from './gaps.js'
 import { sign } from '../propkit.js'
 import { createSparkleField } from '../effects.js'
 import { mulberry32 } from '../textures.js'
@@ -126,8 +129,11 @@ function winPad(ctx, parent, x, z, wy, w, l, wins, vip, k) {
   if (vip) ctx.prompts.push({ x, z, y: wy, r: Math.max(w, l) / 2 + 2, title: 'VIP Pass (forever)', action: `Buy (${fmt(VIP.wins)} wins)`, kind: 'vip' })
 }
 
-function stageRamp(ctx, s, colors) {
-  const { statics } = ctx
+// A breakable ramp (STAGE_MODS breakRamp) is built live with a removable
+// collider and returned as { group, collider, makeCollider }.
+function stageRamp(ctx, s, colors, breakable = false) {
+  const statics = breakable ? new Group() : ctx.statics
+  if (breakable) ctx.live.add(statics)
   const H = STAGES.rampHalf
   const rows = []
   for (let i = 0; i <= 1; i++) {
@@ -155,7 +161,10 @@ function stageRamp(ctx, s, colors) {
     statics.add(sm)
   }
   box(statics, side, 0, (s.y + s.top) / 2, s.zt + 0.2, H * 2, s.top - s.y, 0.4)
-  solidHull([[-H, s.y, s.zr], [H, s.y, s.zr], [-H, s.top, s.zt], [H, s.top, s.zt], [-H, s.y, s.zt], [H, s.y, s.zt]])
+  const hull = [[-H, s.y, s.zr], [H, s.y, s.zr], [-H, s.top, s.zt], [H, s.top, s.zt], [-H, s.y, s.zt], [H, s.y, s.zt]]
+  if (!breakable) return solidHull(hull)
+  const makeCollider = () => addFixed(RAPIER.ColliderDesc.convexHull(new Float32Array(hull.flat())), { x: 0, y: 0, z: 0 })
+  return { group: statics, collider: makeCollider(), makeCollider }
 }
 
 export function buildStages(ctx) {
@@ -176,6 +185,13 @@ export function buildStages(ctx) {
     const flat = s.zs - s.zr
     const pz = s.zs - flat * 0.55
     const plan = s.finish ? { placed: [], gaps: [], holes: [], narrows: [] } : planObstacles(s, pz)
+    // Shifting landing panels: the first LANDING_DEPTH m of the island is a hole.
+    s.mods = s.finish ? [] : modsOf(s.k)
+    if (s.mods.includes('landing')) {
+      s.landing = LANDING_DEPTH
+      plan.holes.unshift([s.zs, s.zs - LANDING_DEPTH])
+      plan.gaps.unshift([s.zs + 1, s.zs - LANDING_DEPTH - 1])
+    }
     // The island top, in pieces: full width, narrow strips, nothing over holes.
     setBaseY(0)
     const cuts = [...plan.holes.map(([a, b]) => [a, b, 0]), ...plan.narrows].sort((a, b) => b[0] - a[0])
@@ -251,7 +267,9 @@ export function buildStages(ctx) {
     skipBoard(ctx, grp, 23.5, s.zr + 7, s.y, s.k)
 
     // The ramp, its ring and the next stage's sign.
-    stageRamp(ctx, s, STAGES.colors[(s.k - 1) % STAGES.colors.length])
+    const ramp = stageRamp(ctx, s, STAGES.colors[(s.k - 1) % STAGES.colors.length], s.mods.includes('breakRamp'))
+    // Gap hazards, landing panels, chaser, lava, darkness (gaps.js).
+    buildStageExtras(ctx, s, ramp)
     // The ring shrinks as you climb, and from RING.moveFrom it slides side to side.
     const ringY = s.top + 7.5
     const rs = 1 - (1 - RING.shrinkTo) * ((s.k - 1) / (STAGES.count - 1))
@@ -280,6 +298,16 @@ export function buildStages(ctx) {
       ].slice(0, s.k >= STAGES.gapFrom ? 2 : 1), 2.4)
       warn.position.set(-H_(), s.y + 4.2, s.zr + 3)
       live.add(warn)
+      // What waits over this gap.
+      const over = GAP_HAZARDS[s.k]
+      if (over?.length) {
+        const gw = sign([
+          { text: 'OVER THE GAP:', size: 34, font: 'fredoka', fill: '#ffffff', outline: '#14141c', ow: 8 },
+          { text: over.map((t) => GAP_NAMES[t]).join(' + '), size: 56, font: 'lucky', fill: ['#ff8a8a', '#ff2a3a'], outline: '#2a0000' },
+        ], 2.4)
+        gw.position.set(H_(), s.y + 4.2, s.zr + 3)
+        live.add(gw)
+      }
     }
     setBaseY(0)
   }
@@ -350,7 +378,8 @@ function buildGears(ctx) {
         }
         o.position.set(sp.x, sp.y + Math.sin(t * 2 + sp.z) * 0.15, sp.z)
         o.rotation.set(0, t * 1.8 + sp.x * 0.3, 0)
-        const sc = sp.gold ? 1.25 : 1
+        const sc = sp.mega ? 2.1 : sp.gold ? 1.25 : 1
+        if (sp.mega) o.rotation.y = t * 3.6
         o.scale.set(sc, sc, sc)
         o.updateMatrix()
         sp.mesh.setMatrixAt(sp.index, o.matrix)

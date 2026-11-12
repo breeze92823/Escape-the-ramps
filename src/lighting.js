@@ -142,15 +142,20 @@ export function createLighting(scene, renderer, preset) {
   // --- Day/night blend ---
   let night = 0 // 0 = day, 1 = night
   let target = 0
+  // Stage ambience (hazards): darkness (lights out) and smoke (fog closes in), 0..1, eased.
+  const amb = { dark: 0, fog: 0, wantDark: 0, wantFog: 0 }
+  const smokeColor = new Color('#b4b8c2')
   const dir = new Vector3()
   const tmpA = new Vector3()
   const tmpB = new Vector3()
   const c = new Color()
   const lerp = (a, b, t) => a + (b - a) * t
-  const mix = (key, out) => out.set(D[key]).lerp(c.set(N[key]), night)
+  let mixT = 0
+  const mix = (key, out) => out.set(D[key]).lerp(c.set(N[key]), mixT)
 
   function apply() {
-    const t = night
+    const t = Math.max(night, amb.dark)
+    mixT = t
     mix('zenith', skyMaterial.uniforms.top.value)
     mix('horizon', skyMaterial.uniforms.bottom.value)
     mix('sunColor', skyMaterial.uniforms.sunColor.value)
@@ -158,10 +163,14 @@ export function createLighting(scene, renderer, preset) {
     mix('sunColor', sun.color)
     mix('hemiSky', hemi.color)
     mix('hemiGround', hemi.groundColor)
-    sun.intensity = lerp(D.sunIntensity, N.sunIntensity, t)
-    hemi.intensity = lerp(D.hemiIntensity, N.hemiIntensity, t)
-    scene.environmentIntensity = lerp(D.envIntensity, N.envIntensity, t)
-    renderer.toneMappingExposure = lerp(D.exposure, N.exposure, t)
+    const dim = 1 - 0.65 * amb.dark // lights out goes darker than a normal night
+    sun.intensity = lerp(D.sunIntensity, N.sunIntensity, t) * dim
+    hemi.intensity = lerp(D.hemiIntensity, N.hemiIntensity, t) * (1 - 0.5 * amb.dark)
+    scene.environmentIntensity = lerp(D.envIntensity, N.envIntensity, t) * (1 - 0.75 * amb.dark)
+    renderer.toneMappingExposure = lerp(D.exposure, N.exposure, t) * (1 - 0.2 * amb.dark)
+    scene.fog.color.lerp(smokeColor, amb.fog * 0.85)
+    scene.fog.near = lerp(FOG.near, 2, amb.fog)
+    scene.fog.far = lerp(FOG.far, 36, amb.fog)
     stars.material.opacity = lerp(D.stars, N.stars, t)
     // Sun and moon are different directions: slerp-ish via normalised lerp of the two.
     sunDirection(D.sunElevation, D.sunAzimuth, tmpA)
@@ -193,6 +202,12 @@ export function createLighting(scene, renderer, preset) {
     toggleDayNight() {
       target = target === 1 ? 0 : 1
     },
+    // Hazard ambience under the player: dark 0..1 (lights out), fog 0..1 (smoke bank).
+    setAmbience(dark, fog) {
+      amb.wantDark = dark
+      amb.wantFog = fog
+    },
+    darkness: () => amb.dark,
     setShadows(next) {
       sun.castShadow = next.shadows
       if (sun.shadow.mapSize.x !== next.shadowMap) {
@@ -203,6 +218,14 @@ export function createLighting(scene, renderer, preset) {
     },
     // Called every frame with the player's position so the sun's shadow box and the sky follow them.
     update(dt, focus) {
+      if (Math.abs(amb.dark - amb.wantDark) > 0.001 || Math.abs(amb.fog - amb.wantFog) > 0.001) {
+        const k = 1 - Math.exp(-2.2 * dt)
+        amb.dark += (amb.wantDark - amb.dark) * k
+        amb.fog += (amb.wantFog - amb.fog) * k
+        if (Math.abs(amb.dark - amb.wantDark) < 0.002) amb.dark = amb.wantDark
+        if (Math.abs(amb.fog - amb.wantFog) < 0.002) amb.fog = amb.wantFog
+        apply()
+      }
       if (night !== target) {
         const stepAmount = dt / TIME_OF_DAY.transition
         night = target > night ? Math.min(target, night + stepAmount) : Math.max(target, night - stepAmount)

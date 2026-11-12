@@ -180,6 +180,9 @@ export function createHud({ teleport, teleportStage, exit, usePrompt }) {
   const chip = el('div', 'run-chip', `<span class="o rc-stage"></span><span class="o rc-time"></span><span class="rc-pb"><i class="medal"></i><span class="o"></span></span><span class="rc-target"><i class="medal"></i><span class="o"></span></span><span class="o rc-tries"></span>`)
   // AFK auto ride banner (top centre, under the run chip's spot).
   const auto = el('div', 'auto-ride', `<span class="ar-dot"></span><span class="o ar-t"></span><span class="o ar-h"></span>`)
+  // Danger streak (near misses in a row multiply gear pickups), under the run chip.
+  const danger = el('div', 'danger-chip', `<span class="o dc-l">DANGER</span><span class="o dc-x"></span>`)
+  chip.append(danger) // inside the run chip, so it wraps with it on narrow screens
   root.append(lines, left, tr, right, bottom, friend, chip, auto, popLayer, toasts, prompt, flash, flair, hurt)
   windows = createWindows({ root, teleportStage })
   root.append(toasts) // toasts stay readable over an open window
@@ -301,6 +304,20 @@ export function createHud({ teleport, teleportStage, exit, usePrompt }) {
         tg.classList.toggle('late', late)
       }
       set('rctr', chip.querySelector('.rc-tries'), `Try ${info.tries}`)
+    },
+    // mult: the danger streak's gear multiplier (1 = hidden); pulses when it rises.
+    setDanger(mult) {
+      const on = mult > 1
+      danger.classList.toggle('show', on)
+      if (!on) return
+      const txt = `x${mult.toFixed(1)} GEARS`
+      if (danger.querySelector('.dc-x').textContent !== txt) {
+        danger.querySelector('.dc-x').textContent = txt
+        danger.classList.remove('pulse')
+        void danger.offsetWidth
+        danger.classList.add('pulse')
+      }
+      danger.style.setProperty('--heat', Math.min(1, (mult - 1) / 2.5).toFixed(2))
     },
     // label: the AFK ramp being auto ridden ('3x Speed'), or null to hide the banner.
     setAuto(label) {

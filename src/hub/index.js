@@ -48,8 +48,8 @@ export function buildHub(scene) {
     gears: ctx.gears,
     rings: ctx.rings,
     obstacles,
-    update(dt, elapsed, pz = 0) {
-      obstacles.update(dt, elapsed, pz)
+    update(dt, elapsed, pz = 0, pl = null) {
+      obstacles.update(dt, elapsed, pz, pl)
       for (const fn of ctx.anim) fn(dt, elapsed)
       ctx.gears.update(dt, elapsed)
       updateFields(elapsed)

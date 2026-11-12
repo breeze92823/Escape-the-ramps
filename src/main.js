@@ -1,5 +1,6 @@
-import { ACESFilmicToneMapping, Clock, Group, PCFSoftShadowMap, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from 'three'
-import { BALLOONS, BONUS, CAMERA, CARS, FALL, graphicsPreset, JUICE, RENDER, STAGES, TRUCK, VIP, WATER, WINGS, WRECK, speedFactor } from './config.js'
+import { ACESFilmicToneMapping, Clock, Group, Object3D, PCFSoftShadowMap, PerspectiveCamera, Scene, SpotLight, SRGBColorSpace, Vector3, WebGLRenderer } from 'three'
+import { BALLOONS, BONUS, CAMERA, CARS, DANGER, FALL, graphicsPreset, JUICE, RENDER, STAGES, TRUCK, VIP, WATER, WINGS, WRECK, speedFactor } from './config.js'
+import { createHazardFx } from './hazardFx.js'
 import { createPowerupVisuals } from './powerups.js'
 import * as bloxity from './bloxity.js'
 import { install as installInput, inputState, onKey, releaseLock } from './input.js'
@@ -179,7 +180,16 @@ const flames = createParticles(scene, { max: 260, additive: true })
 const sparks = createParticles(scene, { max: 320, additive: true, sparkle: true })
 systems.push(dust, flames, sparks)
 const debris = createDebris(scene)
+const hfx = createHazardFx(scene, { dust, flames, sparks, debris })
+systems.push(...hfx.systems)
 for (const p of systems) p.setBudget(particleBudget)
+// Headlights for the lights-out stages (always in the scene so shaders never recompile; 0 by day).
+const headlight = new SpotLight('#fff1d0', 0, 70, 0.55, 0.5, 1.2)
+headlight.position.set(0, 2.2, 1.6)
+const headTarget = new Object3D()
+headTarget.position.set(0, 0, 24)
+playerGroup.add(headlight, headTarget)
+headlight.target = headTarget
 const tmp = new Vector3()
 const lisDir = new Vector3() // camera forward, for the 3D sound listener
 function worldPoint(p) {
@@ -217,13 +227,14 @@ const TELEPORTS = {
   afk: [HUB.rampFootX + 16, 0.1, 5, -Math.PI / 2],
   cars: [40, 0.1, 20, Math.PI / 2],
 }
-const stageStart = (s) => [0, s.y + 0.1, s.zs - 8, Math.PI]
+const stageStart = (s) => [0, s.y + 0.1, s.zs - 8 - (s.landing ?? 0), Math.PI]
 function teleport(where) {
   const best = hub.stages[Math.max(0, game.state.bestStage - 1)]
   const t = where === 'best' ? stageStart(best) : where === 'stage' ? stageStart(hub.stages[0]) : Array.isArray(where) ? where : TELEPORTS[where]
   if (!t) return
   resetPlayer({ x: t[0], y: t[1], z: t[2] }, t[3])
   syncYawToPlayer()
+  danger = 0
   audio.teleport()
   const p = player.position
   burst(p.x, p.y + 1.5, p.z, 40, ['#d08cff', '#ffffff', '#8f5cff'], 7, 0.9, 1)
@@ -372,7 +383,7 @@ function wreckTruck(r) {
   audio.crunch()
   addShake(0.8)
   hud.hurt()
-  hud.callout(r.grind ? 'GROUND UP!' : 'CRUSHED!', '#ff4a3a', true)
+  hud.callout(r.why ?? (r.grind ? 'GROUND UP!' : 'CRUSHED!'), '#ff4a3a', true)
 }
 function explodeTruck() {
   wrecked.burst = true
@@ -392,6 +403,37 @@ function explodeTruck() {
   addShake(1.1)
   audio.hit()
   hud.callout('WRECKED!', '#ff4a3a', true)
+}
+
+// Hazards that kill outright (shot, blasted, caught, melted, stomped): the truck
+// blows up (or melts) at once, then it is back to the start like any wreck.
+function killTruck(r) {
+  if (wrecked) return
+  if (r.kill === 'crush') return wreckTruck(r)
+  const pp = player.position
+  hitStop = WRECK.hitStop * 1.6
+  wrecked = { s: onStage, t: WRECK.pancake, burst: false } // bursts on the next frame
+  player.frozen = true
+  squash = r.kill === 'melt' ? WRECK.pancake + 0.3 : 0
+  if (r.kill === 'melt') {
+    audio.playerHit('melt')
+    for (let i = 0; i < 40; i++) hfx.run({ type: 'ember', x: pp.x + (Math.random() - 0.5) * 3, y: pp.y + 0.5, z: pp.z + (Math.random() - 0.5) * 3 })
+    hfx.run({ type: 'explosion', x: pp.x, y: pp.y + 0.4, z: pp.z, o: { size: 0.7 } })
+  } else {
+    audio.playerHit('blast')
+    hfx.run({ type: 'explosion', x: pp.x, y: pp.y + 1.2, z: pp.z, o: { size: 1.4 } })
+  }
+  addShake(1.1)
+  hud.hurt(r.kill === 'melt' ? 'rgba(255,120,20,0.8)' : undefined)
+  hud.callout(r.why ?? 'WRECKED!', '#ff4a3a', true)
+}
+
+// Danger streak: each near miss in a row raises the gear multiplier; a hit resets it.
+let danger = 0
+const dangerMul = () => 1 + danger * DANGER.step
+function loseStreak() {
+  if (danger >= 2) setTimeout(() => hud.callout('STREAK LOST', '#ffb01a'), 350)
+  danger = 0
 }
 
 // Juice state.
@@ -474,9 +516,11 @@ function updateStages(dt) {
     const dz = sp.z - pp.z
     if (dx * dx + dz * dz < R2 && Math.abs(sp.y - pp.y - 1.4) < 3) {
       sp.away = STAGES.gearRespawn
-      game.addGears(sp.value)
+      const got = Math.round(sp.value * (onStage ? dangerMul() : 1))
+      game.addGears(got)
       audio.gear(sp.gold)
-      burst(sp.x, sp.y, sp.z, sp.gold ? 26 : 10, sp.gold ? ['#ffd21a', '#ffffff'] : ['#9fb4ff', '#ffffff'], 5, 0.6, 0.6)
+      burst(sp.x, sp.y, sp.z, sp.mega ? 60 : sp.gold ? 26 : 10, sp.gold ? ['#ffd21a', '#ffffff'] : ['#9fb4ff', '#ffffff'], sp.mega ? 10 : 5, 0.6, sp.mega ? 1 : 0.6)
+      if (sp.mega) hud.callout(`MEGA GEAR +${got}`, '#ffd21a', true)
     }
   }
   // Flying through a stage ring: a speed bonus.
@@ -536,15 +580,77 @@ function updateHazards(dt) {
   if (wrecked || fall || player.frozen) return
   for (const r of hub.obstacles.test(pp, dt)) {
     if (r.push) {
-      // Wind cannon: a steady sideways shove (even in the air) with streaks.
+      // Wind cannon / crosswind / a tilted seesaw: a steady sideways shove (even in the air).
       player.knock.x += r.ax * dt
-      if (Math.random() < dt * 30) dust.emit(pp.x - Math.sign(r.ax) * 6, pp.y + 0.5 + Math.random() * 3, pp.z + (Math.random() - 0.5) * 8, r.ax * 0.6, 0, 0, { life: 0.5, size: 0.25, sizeEnd: 0.9, color: '#ffffff', alpha: 0.5, drag: 0.5 })
+      if (!r.quiet && Math.random() < dt * 30) dust.emit(pp.x - Math.sign(r.ax) * 6, pp.y + 0.5 + Math.random() * 3, pp.z + (Math.random() - 0.5) * 8, r.ax * 0.6, 0, 0, { life: 0.5, size: 0.25, sizeEnd: 0.9, color: '#ffffff', alpha: 0.5, drag: 0.5 })
+      continue
+    }
+    if (r.kill) {
+      runHits++
+      loseStreak()
+      killTruck(r)
+      break
+    }
+    if (r.zap) {
+      // Tesla arc: no steering for a moment, sparks crawling over the truck.
+      knock(r.vx, r.vy, r.vz, { keep: r.keep ?? 0.5 })
+      player.noSteer = r.noSteer
+      runHits++
+      loseStreak()
+      airFree = true
+      audio.playerHit('zap')
+      addShake(0.5)
+      hud.hurt('rgba(120,200,255,0.7)')
+      hfx.run({ type: 'teslaSpark', x: pp.x, y: pp.y + 1.5, z: pp.z })
+      hfx.run({ type: 'magnetZap', x: pp.x, y: pp.y + 1, z: pp.z })
+      hud.callout('ZAPPED! No steering!', '#8ad8ff', true)
+      continue
+    }
+    if (r.burn) {
+      // Flamethrower: on fire and slowed for a while.
+      if (player.burn <= 0) {
+        runHits++
+        loseStreak()
+        audio.playerHit('burn')
+        hud.hurt('rgba(255,120,20,0.7)')
+        hud.callout('ON FIRE!', '#ff7a1a', true)
+      }
+      player.burn = r.burn
+      player.burnTop = r.slow
+      continue
+    }
+    if (r.flat) {
+      // Spike strip: a flat tyre pulls the truck to one side.
+      if (player.flat <= 0) {
+        runHits++
+        loseStreak()
+        audio.playerHit('flat')
+        debris.chips(pp.x, pp.y + 0.6, pp.z, ['#1c1d22', '#3a3a40', '#d5dbe3'], 0, 0, 10)
+        hfx.run({ type: 'spikePop', x: pp.x, y: pp.y + 0.3, z: pp.z, o: { w: 3 } })
+        hud.callout('FLAT TYRE!', '#ffb01a', true)
+        player.pull = r.pull
+      }
+      player.flat = r.flat
+      player.flatTop = r.top
+      continue
+    }
+    if (r.grab) {
+      // Magnet crane: lifted and flung off the side.
+      knock(r.vx, r.vy, r.vz, { keep: 0, stun: 0.5 })
+      runHits++
+      loseStreak()
+      airFree = true
+      audio.playerHit('grab')
+      addShake(0.6)
+      hfx.run({ type: 'magnetZap', x: pp.x, y: pp.y + 2, z: pp.z })
+      hud.callout('GRABBED!', '#4ab8ff', true)
       continue
     }
     if (r.hit) {
       const power = r.power ?? 1
-      knock(r.vx, r.vy, r.vz, { keep: 0.2 })
+      knock(r.vx, r.vy, r.vz, { keep: r.keep ?? 0.2 })
       runHits++
+      loseStreak()
       addKick(r.vx, r.vz, Math.min(1.5, power))
       const paint = CARS[game.state.car]?.paint ?? CARS.tiger.paint
       if (!r.geyser) debris.chips(pp.x, pp.y + 1.2, pp.z, [r.color ?? '#ffffff', paint.base, paint.accent], r.vx, r.vz, r.blade ? 12 : 8)
@@ -564,10 +670,13 @@ function updateHazards(dt) {
       burst(r.x, r.y, r.z, 18, ['#ffffff', '#ffd21a', '#ff5a4a'], 8, 0.5, 0.8)
       const side = r.vx * Math.cos(player.facing) - r.vz * Math.sin(player.facing) // along the truck's right
       rollV = -Math.sign(side || 1) * (5 + 5 * power)
-      hud.callout(r.shock ? 'BOOM!' : r.bumper ? 'BUMPED!' : r.geyser ? 'GEYSER!' : r.blade ? 'SLICED!' : OUCH[Math.floor(Math.random() * OUCH.length)], r.geyser ? '#7fd4ff' : '#ff6a5a', true)
+      if (r.laser) hfx.run({ type: 'laserSpark', x: pp.x, y: pp.y + 1.2, z: pp.z })
+      const text = r.laser ? 'ZAPPED!' : r.mine ? 'KABOOM!' : r.drone ? 'BZZT!' : r.rammer ? 'RAMMED!' : r.shock ? 'BOOM!' : r.bumper ? 'BUMPED!' : r.geyser ? 'GEYSER!' : r.blade ? 'SLICED!' : OUCH[Math.floor(Math.random() * OUCH.length)]
+      hud.callout(text, r.geyser ? '#7fd4ff' : r.laser ? '#ff5a5a' : '#ff6a5a', true)
     } else if (r.squash) {
       if (player.stun > 0) continue
       runHits++
+      loseStreak()
       if (r.lethal) {
         wreckTruck(r)
         break
@@ -582,7 +691,8 @@ function updateHazards(dt) {
       if (player.stun > 0) continue
       knock(r.vx, 0, r.vz, { keep: 0.2 })
     } else if (r.near && Math.abs(player.speed) > 8) {
-      const n = JUICE.nearGears * k
+      danger = Math.min(DANGER.max, danger + 1)
+      const n = Math.round(JUICE.nearGears * k * dangerMul())
       game.addGears(n)
       audio.nearMiss(Math.sign(r.x - pp.x) * 0.6 || 0)
       hud.callout(`CLOSE! +${n}`, '#7fe6ff')
@@ -611,6 +721,15 @@ function applySurface() {
   player.grip = s?.type === 'ice' ? s.grip : Infinity
   player.surfTop = s?.type === 'mud' ? s.top : 1
   player.belt.x = s?.type === 'conveyor' ? s.belt : 0
+  // Turntable: the floor carries the truck round its centre and turns it.
+  if (s?.type === 'spin') {
+    player.belt.x = s.w * (pp.z - s.cz)
+    player.belt.z = -s.w * (pp.x - s.cx)
+    player.spinW = s.w
+  } else {
+    player.belt.z = 0
+    player.spinW = 0
+  }
   if (s?.type === 'bounce') {
     launch(s.launch)
     audio.bounce()
@@ -754,7 +873,10 @@ function frame() {
     roll = Math.atan2(Math.sin(roll), Math.cos(roll))
     roll *= Math.exp(-14 * dt)
   } else roll += rollV * dt
-  playerGroup.rotation.z = roll
+  // A flat tyre leans the truck toward the flat side; a zap makes it shudder.
+  const lean = player.flat > 0 ? player.pull * -0.14 : 0
+  const shudder = player.noSteer > 0 ? (Math.random() - 0.5) * 0.06 : 0
+  playerGroup.rotation.z = roll + lean + shudder
   // Sinking after a splash.
   if (fall && fall.splash >= 0) {
     playerGroup.position.y -= fall.splash * 2.6
@@ -852,7 +974,22 @@ function frame() {
     speed: player.speed, top: TRUCK.topSpeed * player.topMul, throttle: inputState.move.z, grounded: player.grounded || !!player.ramp,
     steer: player.steer, nitro: player.nitro, onStage: !!onStage, stage: game.state.bestStage, slowmo: timeScale,
   })
-  hub.update(dt, elapsed, pp.z)
+  hub.update(dt, elapsed, pp.z, player)
+  hud.setDanger(onStage ? dangerMul() : 1)
+  // Hazard visual events (explosions, plasma, flames...), callouts and quakes.
+  for (const e of hub.obstacles.effects()) {
+    if (e.type === 'callout') hud.callout(e.o.text, e.o.color, true)
+    else if (e.type === 'quake') {
+      const d = Math.hypot(e.x - pp.x, e.z - pp.z)
+      if (d < e.o.r && Math.abs(e.y - pp.y) < 15) addShake(e.o.k * (1 - d / e.o.r))
+    } else hfx.run(e)
+  }
+  hfx.update(dt)
+  hfx.truck(dt, p, { burning: player.burn, flat: player.flat, zapped: player.noSteer })
+  // Lights out / smoke banks over the player's spot; headlights come on in the dark.
+  const amb = hub.obstacles.ambience(pp)
+  lighting.setAmbience(amb.dark, amb.fog)
+  headlight.intensity = lighting.darkness() * 260
   // Other players: send this truck's pose, draw theirs (hidden while wrecked or sinking).
   if (!playerGroup.visible || player.frozen) sendPose({ ...p, yaw: player.facing, speed: 0, steer: 0, car: game.state.car, air: false })
   else sendPose({ x: p.x, y: p.y, z: p.z, yaw: player.facing, speed: player.speed, steer: player.steer, car: game.state.car, air: !player.grounded && !player.ramp })
