@@ -500,6 +500,33 @@
   border-radius: calc(6 * var(--u)) !important;
 }
 
+/* Room panel (opened by the Friend Boost + button) */
+.room-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10 * var(--u));
+  width: calc(340 * var(--u));
+  min-width: 230px;
+  max-width: 86vw;
+  padding: calc(12 * var(--u));
+  background: rgba(16, 30, 60, 0.92);
+  border: calc(3 * var(--u)) solid #10301a;
+  border-radius: calc(10 * var(--u));
+  color: #fff;
+  font-size: max(13px, calc(18 * var(--u)));
+  z-index: 5;
+}
+.room-panel[hidden] { display: none; }
+.rp-head { font-size: max(15px, calc(24 * var(--u))); margin-bottom: 6px; }
+.rp-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 28vh; overflow: auto; }
+.rp-list li.me { color: #ffe14a; }
+.rp-note { opacity: 0.85; margin-bottom: 8px; line-height: 1.25; }
+.rp-btns { display: flex; gap: 8px; }
+.rp-btns button {
+  flex: 1; min-height: 44px; font: inherit; color: #fff; cursor: pointer;
+  background: linear-gradient(#5cf05c, #1fb83a); border: 3px solid #10301a; border-radius: 8px;
+}
+
 /* --- Overlays -------------------------------------------------------------------- */
 .pop-layer {
   position: absolute;

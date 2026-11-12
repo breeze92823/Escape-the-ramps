@@ -5,7 +5,9 @@ import { dailyReady, levelNeed, nitro, on, state, toast, triggerNitro, winsMulti
 import * as I from './icons.js'
 import { createWindows } from './windows.js'
 import * as audio from '../audio.js'
-import { rewardedAdsAvailable, watchRewardedAd } from '../bloxity.js'
+import { inviteLink, openLeaderboard, rewardedAdsAvailable, watchRewardedAd } from '../bloxity.js'
+import { roomInfo } from '../net.js'
+import { INVITE } from '../config.js'
 import { balloonsLeft, grantWinsBoost, wingsLeft } from '../game.js'
 
 // The game HUD, laid out like the reference: currencies and the four menu
@@ -135,8 +137,35 @@ export function createHud({ teleport, teleportStage, exit, usePrompt }) {
   // --- Friend boost ---
   const friend = el('div', 'hud-friend', `${I.friends}<span class="o fb">Friend Boost: +0%</span>`)
   const fplus = el('button', 'fplus', I.plus)
-  tapped(fplus, () => toast('Invite friends to boost your speed!'))
   friend.append(fplus)
+
+  // --- Room show: who is in this room, the invite link, and the Boxity leaderboards ---
+  const roomPanel = el('div', 'room-panel')
+  roomPanel.hidden = true
+  const renderRoom = () => {
+    const info = roomInfo()
+    const rows = info
+      ? info.players.map((p) => `<li class="${p.me ? 'me' : ''}"><span class="o"></span></li>`).join('')
+      : ''
+    roomPanel.innerHTML = `<div class="rp-head o">Room${info ? ` · ${info.players.length} player${info.players.length === 1 ? '' : 's'}` : ''}</div>
+      <ul class="rp-list">${rows || '<li class="o">Offline: playing solo</li>'}</ul>
+      <div class="rp-note o">Friends who join you: you get +${INVITE.host.boostMin} min 2x Wins and ${INVITE.host.gems} gems. They get ${INVITE.join.label}. Each player in the room: +${INVITE.perFriend}% Speed.</div>
+      <div class="rp-btns"><button class="rp-copy">Copy invite link</button><button class="rp-lb">Leaderboards</button></div>`
+    if (info) roomPanel.querySelectorAll('.rp-list li .o').forEach((n, i) => (n.textContent = info.players[i].name + (info.players[i].me ? ' (you)' : '')))
+    roomPanel.querySelector('.rp-copy').onclick = () => {
+      const link = info && inviteLink(info.code2)
+      if (!link) return toast('Use the Invite button in the Boxity toolbar to invite friends!')
+      navigator.clipboard?.writeText(link).then(() => toast('Invite link copied!', 'good'), () => toast(link))
+    }
+    roomPanel.querySelector('.rp-lb').onclick = () => {
+      if (!openLeaderboard('wins')) toast('Leaderboards open from the Boxity toolbar')
+    }
+  }
+  tapped(fplus, () => {
+    roomPanel.hidden = !roomPanel.hidden
+    if (!roomPanel.hidden) renderRoom()
+  })
+  friend.append(roomPanel)
 
   // --- Overlays ---
   const popLayer = el('div', 'pop-layer')

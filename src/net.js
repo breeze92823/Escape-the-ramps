@@ -10,7 +10,8 @@
 // `saveProgress` (whole snapshot), `identify`, `giftPart` { to: sessionId, part }.
 import { Client } from '@colyseus/sdk'
 import { DEV_MODE, GAME_SLUG, NET, SERVER_URL } from './config.js'
-import { authState, displayName, getPfp, launchRoomId, locateRoom, playerInRoom, playerJoined, sdk, subscribeAuth, updateRoom } from './bloxity.js'
+import { authState, displayName, getPfp, getToken, launchRoomId, locateRoom, playerInRoom, playerJoined, sdk, subscribeAuth, updateRoom } from './bloxity.js'
+import { grantFriendJoined, grantInviteJoin, setFriendCount } from './game.js'
 import * as game from './game.js'
 
 export const net = {
@@ -45,10 +46,10 @@ export function setLeaderboard(msg) {
 // --- Identity ----------------------------------------------------------------
 // Signed-in players use their Bloxity id; everyone else a per-browser guest id (never saved).
 // Dev mode (no SDK) gives each browser a signed-in dev id so saving can be tried locally.
-function stored(key, make) {
+function stored(key, make, area = localStorage) {
   try {
-    let id = localStorage.getItem(key)
-    if (!id) localStorage.setItem(key, (id = make()))
+    let id = area.getItem(key)
+    if (!id) area.setItem(key, (id = make()))
     return id
   } catch {
     return make()
@@ -56,7 +57,7 @@ function stored(key, make) {
 }
 const rand = () => Math.random().toString(36).slice(2, 8)
 const GUEST = stored('escape-the-ramps:guest', () => `guest-${rand()}`)
-const DEV = DEV_MODE ? stored('escape-the-ramps:dev', () => `dev-${rand()}`) : ''
+const DEV = DEV_MODE ? stored('escape-the-ramps:dev', () => `dev-${rand()}`, sessionStorage) : ''
 
 function identity() {
   if (DEV) return { userId: DEV, username: `Dev ${DEV.slice(4)}` }
@@ -88,6 +89,42 @@ export function send(type, payload) {
   }
 }
 
+// --- Room show ------------------------------------------------------------------
+// What the HUD's Room panel shows: the room code (what invites carry) and who is in it.
+export function roomInfo() {
+  const room = net.room
+  if (!room) return null
+  const players = []
+  room.state?.players?.forEach?.((p, id) => players.push({ id, name: p.username || 'Player', me: id === room.sessionId }))
+  players.sort((a, b) => b.me - a.me || a.name.localeCompare(b.name))
+  return { code: room.roomId, players, code2: sentRelay ? `${sentRelay}~${room.roomId}` : room.roomId }
+}
+
+// --- Presence ----------------------------------------------------------------
+// Everyone else's truck pose from the room state (remotePlayers.js draws them): calls
+// fn(id, p) for each spawned player other than this one.
+export function eachRemote(fn) {
+  const room = net.room
+  room?.state?.players?.forEach?.((p, id) => {
+    if (id !== room.sessionId && p.spawned) fn(id, p)
+  })
+}
+// This truck's pose for the others, at most every 0.1 s and not while nothing changed.
+let poseAt = 0
+let lastPose = ''
+const r2 = (n) => Math.round(n * 100) / 100
+export function sendPose(p) {
+  if (!net.connected) return
+  const now = performance.now()
+  if (now - poseAt < 100) return
+  const msg = { x: r2(p.x), y: r2(p.y), z: r2(p.z), yaw: r2(p.yaw), speed: r2(p.speed), steer: r2(p.steer), car: p.car, air: !!p.air }
+  const key = Object.values(msg).join()
+  if (key === lastPose) return
+  poseAt = now
+  lastPose = key
+  send('pose', msg)
+}
+
 // --- Gifts -------------------------------------------------------------------
 // The other players in this room: [{ id: sessionId, name }].
 export function roomPlayers() {
@@ -109,6 +146,7 @@ export function sendGift(to, part) {
 function attach(room) {
   net.room = room
   net.connected = true
+  lastPose = '' // a new session: send where we are
   room.onMessage('progress', (doc) => {
     net.hydrated = true
     lastSaved = ''
@@ -129,24 +167,49 @@ function attach(room) {
     console.warn('[net] server could not read the saved progress; saving is off for this session')
   })
   room.onMessage('leaderboard', setLeaderboard)
+  // Friend invites: the joiner's bonus, and the hosts' bonus when a friend arrives.
+  room.onMessage('inviteWelcome', (m) => {
+    if (m?.reward) grantInviteJoin()
+    else game.toast('Welcome! Your friend bonus was already used recently.')
+  })
+  room.onMessage('friendJoined', (m) => grantFriendJoined(String(m?.name || 'A friend').slice(0, 32)))
   // Gifted tuning parts (backend WorldRoom giftPart): received, or bounced back for a refund.
   room.onMessage('gift', (m) => game.receiveGift(m?.part, m?.from))
   room.onMessage('giftFailed', (m) => game.refundGift(m?.part))
   // Friends' invites land in this room; friends joining show a Boxity toast.
   updateRoom(sentRelay ? `${sentRelay}~${room.roomId}` : room.roomId)
-  const seen = new Set()
-  const hear = (p, id, late) => {
-    if (id === room.sessionId || seen.has(id)) return
-    seen.add(id)
-    if (p.username) (late ? playerJoined : playerInRoom)(p.username)
+  // Portal lobby: tell Boxity about everyone already here, then each arrival (also a username that
+  // is only set later by `identify`); a player who left and returns is announced again.
+  const seen = new Map() // sessionId -> announced username
+  let first = true
+  const hear = (p, id) => {
+    if (id === room.sessionId || !p.username || seen.get(id) === p.username) return
+    seen.set(id, p.username)
+    ;(first ? playerInRoom : playerJoined)(p.username)
+  }
+  const count = () => {
+    let n = 0
+    room.state?.players?.forEach?.(() => n++)
+    setFriendCount(Math.max(0, n - 1))
   }
   const watch = () => {
-    room.state?.players?.forEach((p, id) => hear(p, id, false))
-    room.state?.players?.onAdd?.((p, id) => hear(p, id, true))
+    count()
+    room.state?.players?.forEach((p, id) => hear(p, id))
+    first = false
+    room.state?.players?.onAdd?.((p, id) => {
+      hear(p, id)
+      p.listen?.('username', () => hear(p, id))
+      count()
+    })
+    room.state?.players?.onRemove?.((p, id) => {
+      seen.delete(id)
+      count()
+    })
   }
   room.onStateChange.once?.(watch)
   room.onLeave(() => {
     updateRoom('')
+    setFriendCount(0)
     if (net.room !== room) return
     net.room = null
     net.connected = false
@@ -179,7 +242,7 @@ async function connect() {
   try {
     const id = identity()
     sentId = id.userId
-    const opts = { ...id, pfp: getPfp() }
+    const opts = { ...id, pfp: getPfp(), token: getToken(), invited: false }
     // Opened from a friend's invite / the game page's Join button: go to that room if it is still open.
     const launch = launchRoomId()
     const target = launch && !launched ? await locateRoom(launch).catch(() => null) : null
@@ -187,7 +250,7 @@ async function connect() {
     if (target) {
       try {
         sentRelay = target.relayRoomId || ''
-        attach(await new Client(target.endpoint).joinById(target.roomId, opts))
+        attach(await new Client(target.endpoint).joinById(target.roomId, { ...opts, invited: true }))
         return
       } catch (err) {
         console.info('[net] the invited room is gone; joining a normal one', err?.message ?? err)
@@ -214,7 +277,7 @@ export function initNet() {
     saveNow() // under the old id, before switching
     net.hydrated = false
     sentId = id.userId
-    send('identify', { ...id, pfp: getPfp() })
+    send('identify', { ...id, pfp: getPfp(), token: getToken() })
   })
-  document.addEventListener('visibilitychange', () => document.hidden && saveNow())
+  document.addEventListener('visibilitychange', () => document.hidden && (saveNow(), game.flushScores()))
 }

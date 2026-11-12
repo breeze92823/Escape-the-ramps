@@ -29,6 +29,7 @@ const breakListeners = new Set()
 
 // Boxity boards (dashboard-editable after the first declaration; max 10). Scores are submitted
 // from game.js through submitScore().
+const MAX_PARTY = 6
 const LEADERBOARDS = [
   { id: 'wins', label: 'Wins', order: 'desc', mode: 'latest', format: 'compact', reset: 'none' },
   { id: 'speed', label: 'Speed', order: 'desc', mode: 'latest', format: 'compact', reset: 'none' },
@@ -155,6 +156,14 @@ export function init() {
     const onLocalhost = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
     SDK.init(onLocalhost ? { gameSlug: GAME_SLUG, portalUrl: 'https://bloxity.io' } : { gameSlug: GAME_SLUG })
     SDK.game.loadingStep(`Loading ${GAME_TITLE}`)
+
+    // Party play (before the first matchmaker request): friends who launch together land in one
+    // room, which is what the portal's menu shows as the lobby.
+    try {
+      SDK.party?.enable?.({ maxPartySize: MAX_PARTY })
+    } catch (err) {
+      console.warn('[bloxity] party.enable failed', err)
+    }
 
     for (const key of Object.keys(SETTINGS)) {
       const off = SDK.settings.listen(key, (raw) => {
@@ -356,6 +365,7 @@ export async function locateRoom(id) {
 export function updateRoom(roomId) {
   try {
     sdk()?.game?.updateRoom?.(roomId)
+    if (roomId) sdk()?.game?.registerFeature?.('play_with_friends')
   } catch {
     // Ignore.
   }
@@ -491,15 +501,36 @@ export function openLeaderboard(id) {
 // Friend-join toasts: report everyone already in the room, then each later arrival.
 export function playerInRoom(name) {
   try {
-    sdk()?.game?.playerInRoom?.(name)
+    if (name) sdk()?.game?.playerInRoom?.(name)
   } catch {
     // Ignore.
   }
 }
 export function playerJoined(name) {
   try {
-    sdk()?.game?.playerJoined?.(name)
+    if (name) sdk()?.game?.playerJoined?.(name)
   } catch {
     // Ignore.
+  }
+}
+
+// A shareable link to the current room (Boxity's own invite UI stays in its toolbar; this is
+// only for a "copy link" button). '' when the SDK or a room is missing.
+export function inviteLink(roomId) {
+  try {
+    return sdk()?.game?.getInviteFriendsLink?.({ roomId }) || ''
+  } catch {
+    return ''
+  }
+}
+
+// The signed-in player's Bloxity game token ('' for a guest). The deployed server verifies it: an
+// account id sent by the client is never trusted there.
+export function getToken() {
+  try {
+    const t = sdk()?.auth?.getToken?.()
+    return typeof t === 'string' ? t : ''
+  } catch {
+    return ''
   }
 }
