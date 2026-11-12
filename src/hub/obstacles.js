@@ -23,6 +23,7 @@ import { G, block, box, glowMat, mat, mesh, rod, solid } from './kit.js'
 
 const TRUCK_R = 1.3
 const TRUCK_H = 2.4
+const HIT_COOLDOWN = 0.6 // s before the same hazard can hit again (one hit per swing)
 const F = STAGES.fence
 const lerp = (a, b, t) => a + (b - a) * t
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
@@ -486,7 +487,7 @@ function bumper(ctx, live, s, b, x, z, r = 1.9) {
     const dx = pp.x - x
     const dz = pp.z - z
     const d = Math.hypot(dx, dz)
-    if (d > r + TRUCK_R || pp.y - b > 1.8 || o.near > OBSTACLE.nearCooldown - 0.6) return null
+    if (d > r + TRUCK_R || pp.y - b > 1.8 || o.hitCd > 0) return null
     flash = 1
     sfx('ding', x, b + 1.2, z, 1)
     const ux = dx / (d || 1)
@@ -1363,15 +1364,19 @@ export function createObstacles(ctx) {
       out.length = 0
       for (const o of obstacles) {
         o.near = Math.max(0, o.near - dt)
+        o.hitCd = Math.max(0, (o.hitCd ?? 0) - dt)
         if (Math.abs(o.z - pp.z) > 16 + (o.reach ?? 0)) continue
         const r = o.test(pp)
         if (!r) continue
+        // Separate cooldowns: a near miss (the head always passes the near
+        // radius first) must never swallow the hit that follows it.
         if (r.near) {
-          if (o.near > 0) continue
+          if (o.near > 0 || o.hitCd > 0) continue
           o.near = OBSTACLE.nearCooldown
         } else if (r.hit) {
-          if (o.near > OBSTACLE.nearCooldown - 0.6) continue // one hit per obstacle per swing
-          o.near = OBSTACLE.nearCooldown
+          if (o.hitCd > 0) continue // one hit per obstacle per swing
+          o.hitCd = HIT_COOLDOWN
+          o.near = OBSTACLE.nearCooldown // no CLOSE! bonus right after being hit
         }
         out.push(r)
       }

@@ -2,7 +2,7 @@ import { ACESFilmicToneMapping, Clock, Group, PCFSoftShadowMap, PerspectiveCamer
 import { BALLOONS, BONUS, CAMERA, CARS, FALL, graphicsPreset, JUICE, RENDER, STAGES, TRUCK, VIP, WATER, WINGS, WRECK, speedFactor } from './config.js'
 import { createPowerupVisuals } from './powerups.js'
 import * as bloxity from './bloxity.js'
-import { install as installInput, inputState, onKey } from './input.js'
+import { install as installInput, inputState, onKey, releaseLock } from './input.js'
 import { installTouch } from './touch.js'
 import { createPlayerBody, interpolate as interpolatePlayer, knock, launch, player, resetPlayer, respawn, setLaunchRamps, setRamps, warpTo } from './player.js'
 import { addKick, addShake, setCameraSensitivity, syncYawToPlayer, update as updateCamera } from './camera.js'
@@ -256,6 +256,11 @@ const hud = createHud({ teleport, teleportStage, exit: () => teleport('spawn'), 
 onKey('KeyE', usePrompt)
 onKey('KeyN', () => lighting.toggleDayNight())
 onKey('KeyR', respawn)
+// G: respawn. On the death screen it presses the Respawn button (once its countdown ends).
+onKey('KeyG', () => {
+  if (deathUi?.classList.contains('show')) deathUi.querySelector('button').click()
+  else if (!fall && !wrecked) respawn()
+})
 onKey('KeyM', () => audio.cycleMode())
 installTouch({ day: () => lighting.toggleDayNight(), respawn, nitro: () => game.triggerNitro() })
 
@@ -306,6 +311,10 @@ let deathUi = null
 function askRespawn(go) {
   const death = bloxity.showDeathScreen()
   if (!death) return go()
+  releaseLock() // show the cursor so the Respawn button can be clicked
+  player.velocity.x = player.velocity.y = player.velocity.z = 0
+  player.speed = player.boost = 0
+  player.frozen = true
   if (!deathUi) {
     deathUi = document.createElement('div')
     deathUi.className = 'death-ui'
@@ -315,7 +324,7 @@ function askRespawn(go) {
   const btn = deathUi.querySelector('button')
   const paint = (n) => {
     btn.disabled = n > 0
-    btn.textContent = n > 0 ? `Respawn in ${n}` : 'Respawn'
+    btn.textContent = n > 0 ? `Respawn in ${n}` : 'Respawn (G)'
   }
   paint(4)
   deathUi.classList.add('show')
@@ -838,7 +847,7 @@ function frame() {
   updateHazards(dt)
   runs.update(dt, player.position, player.facing)
   hud.setRun(runs.info())
-  game.update(dt, { moving: speed, afk })
+  game.update(dt, { moving: fall || wrecked ? 0 : speed, afk: fall || wrecked ? 0 : afk })
   audio.update(rawDt, {
     speed: player.speed, top: TRUCK.topSpeed * player.topMul, throttle: inputState.move.z, grounded: player.grounded || !!player.ramp,
     steer: player.steer, nitro: player.nitro, onStage: !!onStage, stage: game.state.bestStage, slowmo: timeScale,

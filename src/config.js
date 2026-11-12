@@ -530,7 +530,7 @@ export const OBSTACLE = {
   edgeTypes: ['pendulum', 'sweeper', 'piston', 'pistons4', 'wreck', 'mallet', 'conveyor', 'bumpers', 'cannon', 'wind', 'geyser', 'logs'],
   edgePad: 6, // m of open edge beyond the slot's footprint, each end
   crushDeathFrom: 11, // crushers / mallets / pile drivers / the grinder wreck the truck from here
-  pendulum: { pivot: 13, arm: 11, amp: 0.95, period: [3.4, 1.5], headR: 1.25, headLen: 3.4, knock: [17, 27], lift: [7, 11], xs: [-14, 0, 14], desyncFrom: 10, desync: 0.16, doubleFrom: 15 },
+  pendulum: { pivot: 13, arm: 11, amp: 0.95, period: [3.4, 1.5], headR: 1.25, headLen: 3.4, knock: [22, 32], lift: [7, 13], xs: [-14, 0, 14], desyncFrom: 10, desync: 0.16, doubleFrom: 15 },
   sweeper: { arm: 11.5, h: 1.0, speed: [0.9, 2.2], knock: [15, 25], xs: [-12.5, 12.5], surgeFrom: 8, surgeEvery: 5, surgeTime: 1.1, surgeWarn: 0.8, reverseFrom: 14, reverseEvery: 4.5, highFrom: 16, highBar: 3.0 }, // h: low bar top (hop it); highBar: the high bar's height (don't hop)
   crusher: { w: 15, d: 7, h: 4, lift: 9, xs: [-16, 0, 16], cycle: [4.2, 2.6], warn: [0.6, 0.32], fall: 0.16, down: 0.8, rise: 1.0, fakeFrom: 11, doubleFrom: 15 },
   wave: { count: 5, spacing: 7.5, d: 6, delay: 0.3, cycle: [4.8, 3.8], warn: 0.4 }, // full-width crushers slamming in sequence (wave ~25 m/s)
