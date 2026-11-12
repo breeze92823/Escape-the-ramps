@@ -18,7 +18,8 @@ import { createParticles, setParticleScale } from './effects.js'
 import { createDebris } from './debris.js'
 import { createHud } from './hud/hud.js'
 import * as game from './game.js'
-import { initNet } from './net.js'
+import { initNet, sendPose } from './net.js'
+import { createRemotePlayers } from './remotePlayers.js'
 import * as audio from './audio.js'
 import { PHYSICS } from './config.js'
 
@@ -128,6 +129,7 @@ function setTruck(id) {
   playerGroup.add(truck.root)
 }
 setTruck(game.state.car)
+const remotes = createRemotePlayers(scene)
 // Balloons / wings on the truck (kept on the player group, so they survive truck swaps).
 const powerups = createPowerupVisuals(playerGroup)
 const glideCfg = { gravityMul: WINGS.gravityMul, fall: WINGS.glideFall }
@@ -842,6 +844,10 @@ function frame() {
     steer: player.steer, nitro: player.nitro, onStage: !!onStage, stage: game.state.bestStage, slowmo: timeScale,
   })
   hub.update(dt, elapsed, pp.z)
+  // Other players: send this truck's pose, draw theirs (hidden while wrecked or sinking).
+  if (!playerGroup.visible || player.frozen) sendPose({ ...p, yaw: player.facing, speed: 0, steer: 0, car: game.state.car, air: false })
+  else sendPose({ x: p.x, y: p.y, z: p.z, yaw: player.facing, speed: player.speed, steer: player.steer, car: game.state.car, air: !player.grounded && !player.ramp })
+  remotes.update(rawDt, p)
   for (const o of hub.obstacles.fx(pp.z)) {
     if (o.fired) {
       // Cannon smoke from the muzzle.

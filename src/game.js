@@ -1,5 +1,5 @@
 import { submitScore } from './bloxity.js'
-import { BALLOONS, CARS, DAILY, ECONOMY, MEDALS, NITRO, REBIRTH, TELEPORT, TUNING, VIP, WINGS } from './config.js'
+import { BALLOONS, CARS, DAILY, ECONOMY, INVITE, MEDALS, NITRO, REBIRTH, TELEPORT, TUNING, VIP, WINGS } from './config.js'
 
 // Player progress and the economy: wins, gears, gems, the Speed stat with its
 // level/XP bar, owned and equipped trucks, nitro, AFK and driving gains.
@@ -67,6 +67,10 @@ function postScores() {
   scoresSent = key
   for (const [id, v] of Object.entries(s)) if (v > 0) submitScore(id, v)
 }
+export function flushScores() {
+  scoresAt = 0
+  postScores()
+}
 // fn() after every local save (net.js pushes the snapshot to the server then).
 export const onSave = (fn) => saveListeners.add(fn)
 
@@ -122,6 +126,27 @@ export function grantWinsBoost(min) {
   state.winsBoostUntil = Math.max(Date.now(), state.winsBoostUntil) + min * 60000
   dirty = true
   toast(`2x Wins for ${min} minutes!`, 'good')
+}
+// Joined through a friend's invite (server `inviteWelcome` with reward): the big joiner bonus.
+export function grantInviteJoin() {
+  const r = INVITE.join
+  state.winsBoostUntil = Math.max(Date.now(), state.winsBoostUntil) + r.boostMin * 60000
+  state.gems += r.gems
+  state.nitroBank += r.nitro
+  dirty = true
+  toast(`Friend invite bonus: ${r.label}!`, 'good')
+}
+// A friend joined your room (server `friendJoined`).
+export function grantFriendJoined(name) {
+  const r = INVITE.host
+  state.winsBoostUntil = Math.max(Date.now(), state.winsBoostUntil) + r.boostMin * 60000
+  state.gems += r.gems
+  dirty = true
+  toast(`${name} joined! +${r.boostMin} min 2x Wins and ${r.gems} gems`, 'good')
+}
+// Friend Boost: +perFriend % Speed gains per other player in the room.
+export function setFriendCount(n) {
+  state.friendBoost = Math.min(INVITE.maxBoost, Math.max(0, n) * INVITE.perFriend)
 }
 export const winsBoostLeft = () => Math.max(0, state.winsBoostUntil - Date.now()) / 1000
 export const winsMultiNow = () => state.winsMulti * (winsBoostLeft() > 0 ? 2 : 1)

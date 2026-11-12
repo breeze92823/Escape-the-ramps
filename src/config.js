@@ -590,3 +590,13 @@ export const JUICE = {
   airGears: 2, // gears per s of air, x stage
   nearGears: 1, // gears per near miss, x stage
 }
+
+// Friend invites (net.js / game.js): joining through a friend's invite pays the joiner `join`; each
+// friend who joins your room pays you `host`; every other player in the room adds `perFriend` %
+// Speed gains (Friend Boost, capped at `maxBoost`).
+export const INVITE = {
+  join: { boostMin: 60, gems: 150, nitro: 120, label: '2x Wins for 60 min + 150 gems + 2 min nitro' },
+  host: { boostMin: 15, gems: 40 },
+  perFriend: 10,
+  maxBoost: 100,
+}
