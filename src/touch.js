@@ -6,7 +6,7 @@
 //   buttons     - hop, nitro, plus day-night/respawn
 import './touch.css'
 import { COARSE_POINTER, TOUCH } from './config.js'
-import { inputState, requestLock, setTouchMove } from './input.js'
+import { inputState, markControl, requestLock, setTouchHop, setTouchMove } from './input.js'
 
 const ICONS = {
   day: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>',
@@ -158,11 +158,29 @@ export function installTouch(actions) {
 
   const cluster = el('div', 'touch-cluster')
   cluster.append(
-    button('sprint', 'NITRO', () => actions.nitro?.()),
-    button('jump', 'HOP', () => {
-      inputState.jump = true
+    button('sprint', 'NITRO', () => {
+      markControl()
+      actions.nitro?.()
     }),
   )
+  // HOP: a tap hops; held down it is also the Wings glide (input.js jumpHeld).
+  const hop = button('jump', 'HOP', (b) => {
+    markControl()
+    inputState.jump = true
+    setTouchHop(true)
+    try {
+      b.setPointerCapture(hopId)
+    } catch {
+      // The release is still caught below.
+    }
+  })
+  let hopId = null
+  hop.addEventListener('pointerdown', (e) => (hopId = e.pointerId), { capture: true })
+  const hopUp = (e) => e.pointerId === hopId && ((hopId = null), setTouchHop(false))
+  hop.addEventListener('pointerup', hopUp)
+  hop.addEventListener('pointercancel', hopUp)
+  hop.addEventListener('lostpointercapture', hopUp)
+  cluster.append(hop)
 
   root.append(left, right, top, cluster)
   document.body.appendChild(root)

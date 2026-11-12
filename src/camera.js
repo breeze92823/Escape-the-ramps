@@ -2,7 +2,7 @@ import { inputState } from './input.js'
 import { player } from './player.js'
 import { segmentClear } from './physics.js'
 import { isFirstPerson, onModeChanged, setMode } from './modes.js'
-import { CAMERA, PHYSICS } from './config.js'
+import { CAMERA, JUICE, PHYSICS } from './config.js'
 
 // One camera, two modes (modes.js). Character mode is a third-person chase cam
 // (ported from Clean Leaves for Loot): it owns its own yaw/pitch and orbits the
@@ -29,6 +29,33 @@ let zoomEased = CAMERA.distance
 let rush = 0 // eased 0..1 sprint factor
 let clearance = 1 // 0..1 of the boom the walls allow, eased back out
 let sinceLook = 99 // s since the last mouse/touch look input
+
+// Screen shake (hard landings, hazard hits, crusher slams): m of jitter, decays.
+let shake = 0
+let shakeT = 0
+// Kick: the camera is jolted the way the truck was hit, then springs back.
+const kick = { x: 0, z: 0 }
+export function addKick(dx, dz, power = 1) {
+  const len = Math.hypot(dx, dz) || 1
+  kick.x += (dx / len) * 0.9 * power
+  kick.z += (dz / len) * 0.9 * power
+}
+export function addShake(amount) {
+  shake = Math.min(1.2, Math.max(shake, amount))
+}
+function applyShake(camera, dt) {
+  camera.position.x += kick.x
+  camera.position.z += kick.z
+  const kd = Math.exp(-6 * dt)
+  kick.x *= kd
+  kick.z *= kd
+  if (shake < 0.005) return
+  shakeT += dt
+  camera.position.x += Math.sin(shakeT * 61) * shake * 0.6
+  camera.position.y += Math.sin(shakeT * 47 + 1.3) * shake * 0.6
+  camera.position.z += Math.sin(shakeT * 53 + 2.1) * shake * 0.6
+  shake *= Math.exp(-JUICE.shakeDecay * dt)
+}
 
 export const getYaw = () => state.yaw
 export const getPitch = () => state.pitch
@@ -128,6 +155,7 @@ export function update(camera, dt) {
     const cp = Math.cos(state.pitch)
     camera.position.set(followed.x, eyeY, followed.z)
     camera.lookAt(followed.x - Math.sin(state.yaw) * cp, eyeY - Math.sin(state.pitch), followed.z - Math.cos(state.yaw) * cp)
+    applyShake(camera, dt)
     return
   }
 
@@ -151,4 +179,5 @@ export function update(camera, dt) {
 
   camera.position.set(look.x + (px - look.x) * clearance, look.y + (py - look.y) * clearance, look.z + (pz - look.z) * clearance)
   camera.lookAt(look.x, look.y, look.z)
+  applyShake(camera, dt)
 }

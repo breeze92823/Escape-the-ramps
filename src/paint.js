@@ -324,34 +324,44 @@ export function paintWood(base = '#6b4326', size = 256, planks = 6, seed = 5) {
   return c
 }
 
-// Leaderboard panel: navy board, header, ranked rows.
-export function paintLeaderboard(title, accent, seed = 3) {
-  const rand = mulberry32(seed)
+// Leaderboard panel: navy board, header, up to 10 ranked rows ({ name, value } with value already
+// formatted) and a footer line. Repaints into `canvas` when given (the hub's live boards).
+export function paintLeaderboard(title, accent, rows = [], { footer = '', canvas = null } = {}) {
   const w = 512
   const h = 384
-  const c = cv(w, h)
+  const c = canvas ?? cv(w, h)
   const ctx = c.getContext('2d')
+  ctx.clearRect(0, 0, w, h)
   ctx.fillStyle = '#1b2440'
   ctx.fillRect(0, 0, w, h)
   ctx.strokeStyle = '#33406a'
   ctx.lineWidth = 10
   ctx.strokeRect(5, 5, w - 10, h - 10)
   ctx.fillStyle = accent
-  ctx.font = '700 40px Fredoka, sans-serif'
+  ctx.font = '700 38px Fredoka, sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(title, w / 2, 52)
-  const names = ['xX_Speedy', 'RampKing', 'Turbo_77', 'MonsterMax', 'NitroNinja', 'GearHead', 'WheelieBoy', 'DriftQueen', 'Zoomer22', 'BigFoot']
-  ctx.font = '600 22px Fredoka, sans-serif'
+  ctx.fillText(title, w / 2, 50)
+  ctx.font = '600 21px Fredoka, sans-serif'
   for (let i = 0; i < 10; i++) {
-    const y = 88 + i * 29
+    const y = 84 + i * 27
+    const row = rows[i]
     ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.09)'
-    ctx.fillRect(20, y - 20, w - 40, 26)
+    ctx.fillRect(20, y - 19, w - 40, 25)
     ctx.textAlign = 'left'
-    ctx.fillStyle = ['#ffd23a', '#d9e2ef', '#e0904a'][i] ?? '#9fb0d6'
-    ctx.fillText(`${i + 1}. ${names[(i + seed) % names.length]}`, 32, y)
-    ctx.textAlign = 'right'
-    ctx.fillStyle = '#7dff6a'
-    ctx.fillText(`${Math.floor((10 - i) * (900 + rand() * 400))}`, w - 32, y)
+    ctx.fillStyle = row ? (['#ffd23a', '#d9e2ef', '#e0904a'][i] ?? '#9fb0d6') : '#4a5680'
+    const name = row ? row.name : '---'
+    ctx.fillText(`${i + 1}. ${name.length > 18 ? `${name.slice(0, 17)}…` : name}`, 32, y)
+    if (row) {
+      ctx.textAlign = 'right'
+      ctx.fillStyle = '#7dff6a'
+      ctx.fillText(row.value, w - 32, y)
+    }
+  }
+  if (footer) {
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '600 20px Fredoka, sans-serif'
+    ctx.fillText(footer, w / 2, 368)
   }
   return c
 }

@@ -1,8 +1,12 @@
 import './hud.css'
 import { Vector3 } from 'three'
-import { CARS, ECONOMY, NITRO } from '../config.js'
-import { buyPack, levelNeed, nitro, on, state, toast, triggerNitro } from '../game.js'
+import { CARS, COARSE_POINTER, MEDALS, NITRO, REBIRTH } from '../config.js'
+import { dailyReady, levelNeed, nitro, on, state, toast, triggerNitro, winsMultiNow } from '../game.js'
 import * as I from './icons.js'
+import { createWindows } from './windows.js'
+import * as audio from '../audio.js'
+import { rewardedAdsAvailable, watchRewardedAd } from '../bloxity.js'
+import { balloonsLeft, grantWinsBoost, wingsLeft } from '../game.js'
 
 // The game HUD, laid out like the reference: currencies and the four menu
 // buttons on the left, Shop/Daily/Exit top right, the 2x offers and nitro
@@ -31,12 +35,14 @@ const tapped = (node, fn) =>
     node.classList.remove('pop')
     void node.offsetWidth
     node.classList.add('pop')
+    audio.click()
     fn(e)
   })
 
-export function createHud({ teleport, exit, usePrompt }) {
+export function createHud({ teleport, teleportStage, exit, usePrompt }) {
   const root = el('div', 'hud')
   document.body.appendChild(root)
+  let windows = null // created last so the windows sit above the rest of the HUD
 
   // --- Left: currencies + menu buttons ---
   const left = el('div', 'hud-left')
@@ -46,52 +52,68 @@ export function createHud({ teleport, exit, usePrompt }) {
   band.append(wins, gears)
   const grid = el('div', 'menu-grid')
   const menu = [
-    ['Rebirth', I.rebirth, () => toast('Rebirth unlocks at 1K Wins!')],
-    ['Teleport', I.teleport, () => tpMenu.classList.toggle('open')],
-    ['Tuning', I.tuning, () => toast('Tuning coming soon!')],
-    ['Cars', I.cars, () => toast('Visit the Car Showroom east of spawn!')],
+    ['Rebirth', I.rebirth, 'rebirth'],
+    ['Teleport', I.teleport, 'teleport'],
+    ['Tuning', I.tuning, 'tuning'],
+    ['Cars', I.cars, 'cars'],
   ]
-  for (const [name, svg, fn] of menu) {
-    const b = el('button', 'menu-btn', `${svg}<span class="o lbl">${name}</span>`)
-    tapped(b, fn)
+  const badges = {}
+  for (const [name, svg, win] of menu) {
+    const b = el('button', 'menu-btn', `${svg}<span class="o lbl">${name}</span><span class="badge o">!</span>`)
+    badges[win] = b.querySelector('.badge')
+    tapped(b, () => windows.toggle(win))
     grid.append(b)
   }
   left.append(band, grid)
-  const tpMenu = el('div', 'tp-menu')
-  for (const [name, where] of [['Spawn', 'spawn'], ['AFK Ramps', 'afk'], ['Car Showroom', 'cars'], ['Stage 1', 'stage'], ['Best Stage', 'best']]) {
-    const b = el('button', 'tp-item o', name)
-    tapped(b, () => {
-      tpMenu.classList.remove('open')
-      teleport(where)
-    })
-    tpMenu.append(b)
-  }
-  left.append(tpMenu)
 
+  let adT = 0
   // --- Top right ---
   const tr = el('div', 'hud-topright')
+  // Sound: On -> Music off -> Muted (also the M key).
+  const SOUND_LABEL = { on: 'Sound', sfx: 'No Music', off: 'Muted' }
+  const soundBtn = el('button', 'top-btn sound-btn')
+  const paintSound = (m) => (soundBtn.innerHTML = `${I.sound(m)}<span class="o lbl">${SOUND_LABEL[m]}</span>`)
+  paintSound(audio.getMode())
+  audio.onMode((m) => {
+    paintSound(m)
+    toast(m === 'on' ? 'Sound + music on' : m === 'sfx' ? 'Music off (sound effects on)' : 'All sound muted')
+  })
+  tapped(soundBtn, () => audio.cycleMode())
+  tr.append(soundBtn)
+  // Rewarded ad (Bloxity): a free 5 min 2x Wins, only offered while an ad is available.
+  const adBtn = el('button', 'top-btn', `${I.trophy}<span class="o lbl">Free 2x</span>`)
+  adBtn.hidden = true
+  let adBusy = false
+  tapped(adBtn, async () => {
+    if (adBusy) return
+    adBusy = true
+    if (await watchRewardedAd('double-wins')) grantWinsBoost(5)
+    adBusy = false
+  })
+  tr.append(adBtn)
   for (const [name, svg, fn] of [
-    ['Shop', I.shop, () => toast('Shop coming soon!')],
-    ['Daily', I.daily, () => toast('Come back tomorrow for your daily reward!')],
+    ['Daily', I.daily, () => windows.toggle('daily')],
     ['Exit', I.exit, exit],
   ]) {
-    const b = el('button', 'top-btn', `${svg}<span class="o lbl">${name}</span>`)
+    const b = el('button', 'top-btn', `${svg}<span class="o lbl">${name}</span>${name === 'Daily' ? '<span class="badge o">!</span>' : ''}`)
+    if (name === 'Daily') badges.daily = b.querySelector('.badge')
     tapped(b, fn)
     tr.append(b)
   }
 
   // --- Right column: offers + nitro ---
   const right = el('div', 'hud-right')
-  const offerWins = el('button', 'offer', `<span class="o title">2x Wins</span><div class="rays"></div>${I.trophy}`)
-  const offer2 = el('button', 'offer', `<span class="o title">2x Gear</span><div class="rays"></div><div class="swap">${I.gear()}</div>`)
-  const only = el('div', 'only', `<span class="o lucky">ONLY</span>${I.gem}<span class="o lucky">3</span>`)
-  tapped(offerWins, () => toast('2x Wins — available in the Shop'))
-  tapped(offer2, () => toast(`${offer2.querySelector('.title').textContent} — available in the Shop`))
+  // Timed power-ups (Balloons, Wings): one chip each with the time left.
+  const powers = el('div', 'powerups')
+  const chipOf = (svg, cls) => el('div', `pw-chip ${cls}`, `${svg}<span class="o pw-t"></span>`)
+  const balloonChip = chipOf(I.balloon, 'balloons')
+  const wingsChip = chipOf(I.wing, 'wings')
+  powers.append(balloonChip, wingsChip)
+  right.append(powers)
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   const nitroBtn = el('button', 'nitro', `${I.nitro}<span class="key">&#8679; SHIFT</span><span class="o time">5.0s</span>`)
   tapped(nitroBtn, () => triggerNitro())
-  right.append(offerWins, offer2, only, nitroBtn)
-  let swapT = 0
-  let swapState = 0
+  right.append(nitroBtn)
 
   // --- Bottom: speed info, level bar, packs ---
   const bottom = el('div', 'hud-bottom')
@@ -108,16 +130,7 @@ export function createHud({ teleport, exit, usePrompt }) {
   const lvl = el('span', 'o lvl', 'Level 1')
   const xp = el('span', 'o xp', '0 / 0')
   bar.append(fill, lvl, xp)
-  const packs = el('div', 'packs')
-  ECONOMY.speedPacks.forEach((p, i) => {
-    const b = el('button', `pack ${p.cls}`, `<div class="bgwheel">${I.wheel}</div><span class="o">${p.label}</span><span class="price">${I.gem}<span class="o">${p.gems}</span></span>`)
-    tapped(b, () => buyPack(i))
-    packs.append(b)
-  })
-  const plusBtn = el('button', 'plus', I.plus)
-  tapped(plusBtn, () => toast('More speed packs coming soon!'))
-  packs.append(plusBtn)
-  bottom.append(info, bar, packs)
+  bottom.append(info, bar)
 
   // --- Friend boost ---
   const friend = el('div', 'hud-friend', `${I.friends}<span class="o fb">Friend Boost: +0%</span>`)
@@ -132,7 +145,15 @@ export function createHud({ teleport, exit, usePrompt }) {
   tapped(prompt, () => usePrompt())
   const lines = el('div', 'speedlines')
   const flash = el('div', 'levelup o')
-  root.append(lines, left, tr, right, bottom, friend, popLayer, toasts, prompt, flash)
+  const flair = el('div', 'flair o lucky')
+  const hurt = el('div', 'hurt') // red (crush) / blue (splash) screen-edge flash
+  // Stage run chip (top centre): stage, timer, personal best, next medal, try count.
+  const chip = el('div', 'run-chip', `<span class="o rc-stage"></span><span class="o rc-time"></span><span class="rc-pb"><i class="medal"></i><span class="o"></span></span><span class="rc-target"><i class="medal"></i><span class="o"></span></span><span class="o rc-tries"></span>`)
+  // AFK auto ride banner (top centre, under the run chip's spot).
+  const auto = el('div', 'auto-ride', `<span class="ar-dot"></span><span class="o ar-t"></span><span class="o ar-h"></span>`)
+  root.append(lines, left, tr, right, bottom, friend, chip, auto, popLayer, toasts, prompt, flash, flair, hurt)
+  windows = createWindows({ root, teleportStage })
+  root.append(toasts) // toasts stay readable over an open window
 
   // --- Events ---
   const v = new Vector3()
@@ -155,6 +176,31 @@ export function createHud({ teleport, exit, usePrompt }) {
     popLayer.append(p)
     setTimeout(() => p.remove(), 1200)
   })
+  // Short text popping off the truck (CLOSE!, AIR 1.4s, OUCH!).
+  const callout = (text, color = '#ffffff', big = false) => {
+    const p = el('div', `popup callout${big ? ' big' : ''}`, `<span class="o">${text}</span>`)
+    p.style.color = color
+    let x = window.innerWidth * 0.5
+    let y = window.innerHeight * 0.42
+    if (anchor && camera) {
+      v.set(anchor.x, anchor.y + 3.4, anchor.z).project(camera)
+      if (v.z < 1) {
+        x = (v.x * 0.5 + 0.5) * window.innerWidth + (Math.random() - 0.5) * window.innerWidth * 0.06
+        y = (-v.y * 0.5 + 0.5) * window.innerHeight
+      }
+    }
+    p.style.left = `${x}px`
+    p.style.top = `${y}px`
+    popLayer.append(p)
+    setTimeout(() => p.remove(), 1200)
+  }
+  const showFlair = (html, color = '#ffe14a') => {
+    flair.innerHTML = html
+    flair.style.color = color
+    flair.classList.remove('show')
+    void flair.offsetWidth
+    flair.classList.add('show')
+  }
   const bump = (statEl, text) => {
     const b = el('span', 'o bump', text)
     statEl.append(b)
@@ -162,6 +208,7 @@ export function createHud({ teleport, exit, usePrompt }) {
   }
   on('gears', (n) => bump(gears, `+${fmt(n)}`))
   on('wins', (n) => {
+    if (n <= 0) return
     bump(wins, `+${fmt(n)}`)
     flash.textContent = `+${fmt(n)} WINS!`
     flash.classList.remove('show')
@@ -193,8 +240,46 @@ export function createHud({ teleport, exit, usePrompt }) {
     node[prop] = value
   }
   let promptTarget = null
+  const clock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`
+  const medalCls = (tier) => `medal m${tier}`
   return {
     root,
+    windows,
+    callout,
+    flair: showFlair,
+    hurt(color = 'rgba(255,30,30,0.75)') {
+      hurt.style.setProperty('--hurt', color)
+      hurt.classList.remove('show')
+      void hurt.offsetWidth
+      hurt.classList.add('show')
+    },
+    // info: runs.info() or null.
+    setRun(info) {
+      chip.classList.toggle('show', !!info)
+      if (!info) return
+      set('rcs', chip.querySelector('.rc-stage'), `STAGE ${info.k}/${info.count}`)
+      set('rct', chip.querySelector('.rc-time'), clock(info.time))
+      const pb = chip.querySelector('.rc-pb')
+      pb.style.display = info.best ? '' : 'none'
+      set('rcpm', pb.querySelector('i'), medalCls(info.medal), 'className')
+      set('rcp', pb.querySelector('span'), info.best ? `PB ${clock(info.best)}${info.ghost ? ' 👻' : ''}` : '')
+      const tg = chip.querySelector('.rc-target')
+      tg.style.display = info.target ? '' : 'none'
+      if (info.target) {
+        const late = info.time > info.target.time
+        set('rcgm', tg.querySelector('i'), medalCls(info.target.tier), 'className')
+        set('rcg', tg.querySelector('span'), `${MEDALS.tiers[info.target.tier - 1].label} ${clock(info.target.time)}`)
+        tg.classList.toggle('late', late)
+      }
+      set('rctr', chip.querySelector('.rc-tries'), `Try ${info.tries}`)
+    },
+    // label: the AFK ramp being auto ridden ('3x Speed'), or null to hide the banner.
+    setAuto(label) {
+      auto.classList.toggle('show', !!label)
+      if (!label) return
+      set('art', auto.querySelector('.ar-t'), `AUTO RIDE · ${label}`)
+      set('arh', auto.querySelector('.ar-h'), COARSE_POINTER ? 'Touch the controls to drive' : 'Press any key to drive')
+    },
     setPrompt(p) {
       promptTarget = p
       if (!p) {
@@ -217,24 +302,25 @@ export function createHud({ teleport, exit, usePrompt }) {
       set('fill', fill.style, `${Math.min(100, (state.xp / need) * 100).toFixed(1)}%`, 'width')
       set('multi', multiTxt, `Speed Multi: ${state.speedMulti.toFixed(2)}X`)
       set('tune', tuningTxt, `+${state.tuning}% Speed (Tuning)`)
-      set('wm', winsMulti, `Wins Multi: ${state.winsMulti.toFixed(2)}X`)
+      set('wm', winsMulti, `Wins Multi: ${winsMultiNow().toFixed(2)}X`)
+      badges.rebirth.classList.toggle('on', state.level >= REBIRTH.levelReq(state.rebirths))
+      badges.daily.classList.toggle('on', dailyReady())
+      windows.update(dt)
+      adT -= dt
+      if (adT <= 0) {
+        adT = 3
+        adBtn.hidden = !rewardedAdsAvailable()
+      }
       set('fb', friend.querySelector('.fb'), `Friend Boost: +${state.friendBoost}%`)
+      for (const [chip, left, key] of [[balloonChip, balloonsLeft(), 'pwb'], [wingsChip, wingsLeft(), 'pww']]) {
+        chip.hidden = left <= 0
+        if (left > 0) set(key, chip.lastChild, mmss(left))
+      }
       const tm = nitro.active > 0 ? nitro.active : nitro.cooldown > 0 ? nitro.cooldown : NITRO.duration
       set('nt', nitroBtn.querySelector('.time'), `${tm.toFixed(1)}s`)
       nitroBtn.classList.toggle('active', nitro.active > 0)
       nitroBtn.classList.toggle('cooling', nitro.cooldown > 0)
       lines.classList.toggle('on', nitro.active > 0)
-      // 2x Gear <-> 2x Speed alternate like the reference.
-      swapT += dt
-      if (swapT > 4) {
-        swapT = 0
-        swapState ^= 1
-        offer2.querySelector('.title').textContent = swapState ? '2x Speed' : '2x Gear'
-        offer2.querySelector('.swap').innerHTML = swapState ? I.wheel : I.gear()
-        offer2.classList.remove('flip')
-        void offer2.offsetWidth
-        offer2.classList.add('flip')
-      }
       if (promptTarget && cam) {
         v.set(promptTarget.x, (promptTarget.y ?? 0) + 3.2, promptTarget.z).project(cam)
         const vis = v.z < 1

@@ -19,10 +19,11 @@ import {
 // Tuning Shop (with its shopkeeper), the FROG display, the Gear Magnet, the
 // red/white barrier line and the hot-air balloons.
 
-export const priceLines = (top, gems, sub) => [
+export const priceLines = (top, sub) => [
   { text: top, size: 64, font: 'pixel', fill: '#ffffff', outline: '#14141c', ow: 12 },
-  sub ? { text: sub, size: 30, font: 'pixel', fill: '#ffb21a', outline: '#3a1a00', ow: 8 } : { text: String(gems), size: 34, font: 'pixel', fill: '#4dff3a', outline: '#0b3a0b', ow: 9, gem: true },
+  { text: sub, size: 30, font: 'pixel', fill: '#ffb21a', outline: '#3a1a00', ow: 8 },
 ]
+const winsReq = (n) => `${n >= 1000 ? `${n / 1000}K` : n} WINS REQUIRED`
 
 // Dirt pad: a square of brown studded plastic with ragged edge tiles and a
 // few grey-blue plates scattered on it.
@@ -68,7 +69,7 @@ export function carDisplay(ctx, id, x, z, { yaw = 0, ropes = false, concrete = f
   t.root.scale.setScalar(1.15)
   spin.add(bake(t.root, true)) // merged: the whole truck just turns
   ctx.anim.push((dt) => (spin.rotation.y += dt * 0.45))
-  const s = sign(priceLines(`+${car.bonus} Speed`, car.gems), 2.2)
+  const s = sign(priceLines(`+${car.bonus} Speed`, car.daily ? 'DAY 7 REWARD' : winsReq(car.wins)), 2.2)
   s.position.set(x, 7.6, z)
   ctx.live.add(s)
   createSparkleField(ctx.live, { x, y: 1.3, z, radius: 3.8, height: 5, count: 26, color: '#fff2a0', size: 0.45, seed: x * 7 + z })
@@ -220,7 +221,7 @@ function buildTuningShop(ctx) {
   }
   for (let i = 0; i < pts.length - 1; i++) rod(g, tape, [pts[i][0], 1.05, pts[i][1]], [pts[i + 1][0], 1.05, pts[i + 1][1]], 0.05)
   solidLocal(g, 0, 0, -0.5, 13.2, 6.5, 8.8)
-  ctx.prompts.push({ x: P.x, z: P.z, r: 11, title: 'Tuning Shop', action: 'Open', kind: 'info', text: 'Tuning coming soon!' })
+  ctx.prompts.push({ x: P.x, z: P.z, r: 11, title: 'Tuning Shop', action: 'Open', kind: 'tuning' })
 }
 
 function buildMagnet(ctx) {

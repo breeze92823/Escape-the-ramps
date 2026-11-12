@@ -241,6 +241,39 @@
   width: calc(34 * var(--u));
   height: calc(34 * var(--u));
 }
+/* Timed power-up chips (Balloons, Wings) above the nitro bottle. */
+.powerups {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--u));
+  align-items: center;
+}
+.pw-chip {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  padding: calc(6 * var(--u)) calc(16 * var(--u)) calc(6 * var(--u)) calc(8 * var(--u));
+  min-height: 28px;
+  border-radius: 999px;
+  background: linear-gradient(#3aa2f0, #1f6fd0);
+  border: calc(3 * var(--u)) solid #ffffff;
+  box-shadow: 0 calc(4 * var(--u)) 0 rgba(0, 0, 0, 0.35);
+}
+.pw-chip.balloons {
+  background: linear-gradient(#ff5a6a, #d8203a);
+}
+.pw-chip[hidden] {
+  display: none;
+}
+.pw-chip svg {
+  width: calc(52 * var(--u)) !important;
+  height: calc(52 * var(--u)) !important;
+  min-width: 22px;
+  min-height: 22px;
+}
+.pw-chip .pw-t {
+  font-size: max(14px, calc(30 * var(--u)));
+}
 .nitro {
   position: relative;
   margin-top: calc(26 * var(--u));
@@ -599,6 +632,144 @@
   50% { transform: rotate(2.5deg) scale(1.03); }
 }
 
+/* --- Stage run chip, callouts, medal flair ---------------------------------------- */
+.run-chip {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-t) + 16 * var(--u));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(10 * var(--u)) calc(22 * var(--u));
+  max-width: min(92vw, calc(1100 * var(--u)));
+  padding: calc(10 * var(--u)) calc(26 * var(--u));
+  border-radius: calc(40 * var(--u));
+  background: rgba(20, 16, 28, 0.45);
+  font-size: max(12px, calc(30 * var(--u)));
+}
+.run-chip.show {
+  display: flex;
+}
+/* AFK auto ride banner (the run chip never shows in the hub, so it shares the spot). */
+.auto-ride {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-t) + 16 * var(--u));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(6 * var(--u)) calc(18 * var(--u));
+  max-width: min(92vw, calc(900 * var(--u)));
+  padding: calc(10 * var(--u)) calc(28 * var(--u));
+  border-radius: calc(40 * var(--u));
+  background: rgba(20, 16, 28, 0.5);
+  font-size: max(13px, calc(32 * var(--u)));
+  pointer-events: none;
+}
+.auto-ride.show {
+  display: flex;
+}
+.auto-ride .ar-dot {
+  width: max(9px, calc(20 * var(--u)));
+  height: max(9px, calc(20 * var(--u)));
+  border-radius: 50%;
+  background: #7dff4a;
+  box-shadow: 0 0 calc(14 * var(--u)) #7dff4a;
+  animation: ar-pulse 1.1s ease-in-out infinite;
+}
+.auto-ride .ar-t {
+  color: #7dff4a;
+}
+.auto-ride .ar-h {
+  font-size: max(11px, calc(24 * var(--u)));
+  color: #e6ebf4;
+}
+@keyframes ar-pulse {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+.run-chip .rc-stage {
+  color: #7dff4a;
+}
+.run-chip .rc-time {
+  font-size: max(16px, calc(44 * var(--u)));
+  min-width: 4.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.run-chip .rc-pb,
+.run-chip .rc-target {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+.run-chip .rc-target.late {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.run-chip .rc-tries {
+  color: #ffb3b3;
+}
+.hud .medal {
+  display: inline-block;
+  width: max(12px, calc(30 * var(--u)));
+  height: max(12px, calc(30 * var(--u)));
+  border-radius: 50%;
+  border: max(2px, calc(4 * var(--u))) solid #14101c;
+  background: #555a66;
+  box-shadow: inset 0 calc(-4 * var(--u)) 0 rgba(0, 0, 0, 0.25);
+}
+.hud .medal.m0 { background: #555a66; }
+.hud .medal.m1 { background: #e0904a; }
+.hud .medal.m2 { background: #d8e0ea; }
+.hud .medal.m3 { background: #ffd21a; }
+.callout {
+  font-size: max(16px, calc(46 * var(--u)));
+  font-family: 'Luckiest Guy', 'Fredoka', sans-serif;
+  font-weight: 400;
+}
+.callout.big {
+  font-size: max(22px, calc(70 * var(--u)));
+}
+.flair {
+  position: absolute;
+  left: 50%;
+  top: 24%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: max(26px, calc(84 * var(--u)));
+  opacity: 0;
+  white-space: nowrap;
+}
+.flair small {
+  display: block;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: 0.42em;
+  color: #ffffff;
+  margin-top: 0.25em;
+}
+.flair.show {
+  animation: lvl-flash 2.6s ease-out;
+}
+
+.hurt {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, var(--hurt, rgba(255, 30, 30, 0.75)) 100%);
+}
+.hurt.show {
+  animation: hurt-flash 0.9s ease-out;
+}
+@keyframes hurt-flash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* --- Touch + small screens --------------------------------------------------------- */
 .touch-ui .hud-friend {
   display: none;
@@ -620,6 +791,14 @@
   }
   .hud-bottom {
     bottom: calc(var(--safe-b) + 260 * var(--u));
+  }
+  .run-chip {
+    top: calc(var(--safe-t) + 70px);
+  }
+  /* The top row is full on portrait phones: ride just above the speed panel. */
+  .auto-ride {
+    top: auto;
+    bottom: calc(var(--safe-b) + 260 * var(--u) + 104px);
   }
 }
 /* On touch: Exit already respawns and the NITRO thumb button replaces the
@@ -644,4 +823,42 @@
   20% { opacity: 1; transform: translateY(0) scale(1.1); }
   80% { opacity: 1; }
   100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* --- Death screen (main.js askRespawn): centred, away from Boxity's toolbar ------------------- */
+.death-ui {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  z-index: 60;
+  font-family: Fredoka, sans-serif;
+}
+.death-ui.show {
+  display: flex;
+}
+.death-t {
+  font-size: clamp(32px, 7vw, 64px);
+  font-weight: 700;
+  color: #ff5a4a;
+  -webkit-text-stroke: 6px #1a1024;
+  paint-order: stroke fill;
+}
+.death-btn {
+  min-width: 220px;
+  min-height: 56px;
+  padding: 8px 28px;
+  border: 4px solid #1a1024;
+  border-radius: 14px;
+  background: #3cdc4a;
+  color: #fff;
+  font: 700 clamp(22px, 4vw, 30px) Fredoka, sans-serif;
+  touch-action: manipulation;
+}
+.death-btn:disabled {
+  background: #7b8190;
 }

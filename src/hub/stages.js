@@ -14,12 +14,13 @@ import {
   SRGBColorSpace,
   TorusGeometry,
 } from 'three'
-import { PHYSICS, PLAYER_DIMS, STAGES, TRUCK } from '../config.js'
+import { BALLOONS, PHYSICS, RING, STAGES, TRUCK, VIP } from '../config.js'
 import { sign } from '../propkit.js'
 import { createSparkleField } from '../effects.js'
 import { mulberry32 } from '../textures.js'
 import { cached, paintBands, paintDownArrow, paintPlate, paintPlastic, tex } from '../paint.js'
 import { HUB } from './layout.js'
+import { buildObstacles, edgeCurb, planObstacles } from './obstacles.js'
 import { slab } from './ground.js'
 import { G, block, box, cone, floorArrow, glowMat, gold, guardrail, mat, mesh, place, rod, setBaseY, solid, solidHull, stripGeometry } from './kit.js'
 
@@ -36,7 +37,7 @@ import { G, block, box, cone, floorArrow, glowMat, gold, guardrail, mat, mesh, p
 const g = Math.abs(PHYSICS.gravity)
 const fmt = (n) => (n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : String(n))
 
-// Pure layout, shared with main.js (checkpoints, current stage).
+// Pure layout, shared with main.js (falls, current stage).
 export function stageLayout() {
   const out = []
   let zs = HUB.field.north - HUB.launch.gap
@@ -47,9 +48,9 @@ export function stageLayout() {
     const rise = STAGES.rise(k)
     // Every ramp ends in a gap. Before gapFrom it is a warm-up any truck at
     // top speed clears; from gapFrom only needStat(k) Speed clears it.
-    // The truck's nose (capsule radius) reaches past its feet, so add it.
+    // Landing needs the feet over the edge (player.js airClimb), plus a little.
     const range = (v) => (2 * v * v * (rise / STAGES.rampLen)) / g
-    const gap = PLAYER_DIMS.radius + (k >= STAGES.gapFrom ? STAGES.gapMargin * range(STAGES.needSpeed(k)) : STAGES.easyMargin * range(TRUCK.topSpeed))
+    const gap = STAGES.edgeReach + (k >= STAGES.gapFrom ? STAGES.gapMargin * range(STAGES.needSpeed(k)) : STAGES.easyMargin * range(TRUCK.topSpeed))
     out.push({ k, zs, zr, zt, y, top: y + rise, gap, wins: STAGES.wins[k - 1], rec: STAGES.recommended[k - 1] })
     zs = zt - gap
     y += rise
@@ -93,11 +94,11 @@ function balloonsStand(ctx, parent, x, z, wy) {
   const l = sign([
     { text: 'BALLOONS', size: 70, font: 'lucky', fill: ['#7fd4ff', '#2a6cff'], outline: '#0b1a4a' },
     { text: '5 MINUTES', size: 30, font: 'pixel', fill: '#ffffff', outline: '#14141c', ow: 7 },
-    { text: '19', size: 34, font: 'fredoka', fill: '#4dff3a', outline: '#0b3a0b', ow: 8, gem: true },
+    { text: `${fmt(BALLOONS.wins)} WINS`, size: 34, font: 'fredoka', fill: ['#fff27a', '#ffa21a'], outline: '#3a2410', ow: 8 },
   ], 2.3)
   l.position.set(x, wy + 7.4, z)
   ctx.live.add(l)
-  ctx.prompts.push({ x, z, y: wy, r: 5.5, title: 'Balloons', action: 'Buy', kind: 'info', text: 'Balloons (5 min) cost 19 gems — coming soon!' })
+  ctx.prompts.push({ x, z, y: wy, r: 5.5, title: `Balloons (${BALLOONS.minutes} min)`, action: `Buy (${fmt(BALLOONS.wins)} wins)`, kind: 'balloons' })
 }
 
 function skipBoard(ctx, parent, x, z, wy, k) {
@@ -121,6 +122,8 @@ function winPad(ctx, parent, x, z, wy, w, l, wins, vip, k) {
   ctx.live.add(lab)
   createSparkleField(ctx.live, { x, y: wy + 0.15, z, w, d: l, height: 3, count: 14, color: vip ? '#ff9af0' : '#fff3a0', size: 0.4, seed: k * 13 + (vip ? 1 : 0) })
   ctx.winPads.push({ x0: x - w / 2, x1: x + w / 2, z0: z - l / 2, z1: z + l / 2, y: wy, wins, vip, stage: k })
+  // Buy the pass right there (main.js hides this prompt once it is owned).
+  if (vip) ctx.prompts.push({ x, z, y: wy, r: Math.max(w, l) / 2 + 2, title: 'VIP Pass (forever)', action: `Buy (${fmt(VIP.wins)} wins)`, kind: 'vip' })
 }
 
 function stageRamp(ctx, s, colors) {
@@ -168,13 +171,43 @@ export function buildStages(ctx) {
   const arrowMat = new SpriteMaterial({ map: arrowTex, transparent: true, depthWrite: false })
 
   for (const s of layout) {
-    const len = s.zs - s.zt
+    // Hazards first (pure plan): the island has holes (bridge, trapdoors) and
+    // narrow strips, and the side rails stay open beside the knock-off hazards.
+    const flat = s.zs - s.zr
+    const pz = s.zs - flat * 0.55
+    const plan = s.finish ? { placed: [], gaps: [], holes: [], narrows: [] } : planObstacles(s, pz)
+    // The island top, in pieces: full width, narrow strips, nothing over holes.
     setBaseY(0)
-    slab(statics, -STAGES.half, STAGES.half, s.zt, s.zs, s.y, STAGES.thickness + (s.k === 1 ? 0 : 0))
+    const cuts = [...plan.holes.map(([a, b]) => [a, b, 0]), ...plan.narrows].sort((a, b) => b[0] - a[0])
+    let top = s.zs
+    for (const [a, b2, half] of cuts) {
+      if (a < top) slab(statics, -STAGES.half, STAGES.half, a, top, s.y, STAGES.thickness)
+      if (half > 0) slab(statics, -half, half, b2, a, s.y, STAGES.thickness)
+      top = b2
+    }
+    slab(statics, -STAGES.half, STAGES.half, s.zt, top, s.y, STAGES.thickness)
     const grp = place(statics, 0, s.y, 0)
     setBaseY(s.y)
-    guardrail(grp, -F, s.zs - 1, -F, s.zt + 1)
-    guardrail(grp, F, s.zs - 1, F, s.zt + 1)
+    // Curbs only where there is island under them.
+    const solidParts = (zHi, zLo) => {
+      const parts = [[zHi, zLo]]
+      for (const [a, b2] of cuts) {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const [h, l] = parts[i]
+          if (b2 >= h || a <= l) continue
+          parts.splice(i, 1, ...[[h, Math.max(l, a)], [Math.min(h, b2), l]].filter(([x, y]) => x - y > 1))
+        }
+      }
+      return parts
+    }
+    let zHi = s.zs - 1
+    for (const [g0, g1] of plan.gaps) {
+      if (g0 < zHi - 1) for (const sx of [-1, 1]) guardrail(grp, sx * F, zHi, sx * F, g0)
+      for (const [c0, c1] of solidParts(g0, g1)) for (const sx of [-1, 1]) edgeCurb(ctx.live, s.y, sx, c0, c1)
+      zHi = g1
+    }
+    for (const sx of [-1, 1]) guardrail(grp, sx * F, zHi, sx * F, s.zt + 1)
+    s.gaps = plan.gaps
     // Rails across the far end beside the ramp: the ramp is the only way on.
     if (!s.finish) for (const sx of [-1, 1]) guardrail(grp, sx * (STAGES.rampHalf + 0.6), s.zt + 1, sx * F, s.zt + 1)
     for (const sx of [-1, 1]) cone(grp, sx * (F - 1.5), s.zs - 3)
@@ -186,11 +219,10 @@ export function buildStages(ctx) {
     }
 
     // Arrows up the lane.
-    const flat = s.zs - s.zr
-    for (let d = 14, i = 0; d < flat - 30; d += 42, i++) floorArrow(grp, [0, -9, 9][i % 3], s.zs - d, Math.PI, 12, 2.8, 5, 8)
+    const onCut = (z) => cuts.some(([a, b2]) => z < a + 10 && z > b2 - 10)
+    for (let d = 14, i = 0; d < flat - 30; d += 42, i++) if (!onCut(s.zs - d)) floorArrow(grp, [0, -9, 9][i % 3], s.zs - d, Math.PI, 12, 2.8, 5, 8)
 
     // Win pads under a bobbing arrow (about halfway up, right side).
-    const pz = s.zs - flat * 0.55
     winPad(ctx, grp, 18, pz, s.y, 7, 12, s.wins, false, s.k)
     winPad(ctx, grp, 18, pz - 15, s.y, 7, 12, s.wins * 2, true, s.k)
     const arrow = new Sprite(arrowMat)
@@ -211,18 +243,28 @@ export function buildStages(ctx) {
     const across = Math.min(9, 5 + Math.floor(s.k / 4))
     for (let i = 0; i < across; i++) ctx.gearSpots.push({ x: -12 + (i * 24) / (across - 1), y: s.y + 1.4, z: s.zr + 14, value: s.k, gold: i === across - 1 })
 
+    // Hazards and surfaces down the lane (obstacles.js).
+    buildObstacles(ctx, s, grp, plan)
+
     // Balloons + skip board by the ramp foot.
     balloonsStand(ctx, grp, -23, s.zr + 9, s.y)
     skipBoard(ctx, grp, 23.5, s.zr + 7, s.y, s.k)
 
     // The ramp, its ring and the next stage's sign.
     stageRamp(ctx, s, STAGES.colors[(s.k - 1) % STAGES.colors.length])
+    // The ring shrinks as you climb, and from RING.moveFrom it slides side to side.
     const ringY = s.top + 7.5
-    const ring = mesh(live, new TorusGeometry(6.5, 0.55, 14, 48), gold(), 0, ringY, s.zt - 1)
-    ctx.anim.push((dt, t) => (ring.rotation.z = Math.sin(t * 0.6 + s.k) * 0.08))
+    const rs = 1 - (1 - RING.shrinkTo) * ((s.k - 1) / (STAGES.count - 1))
+    const ring = mesh(live, new TorusGeometry(6.5, 0.55, 14, 48), gold(), 0, ringY, s.zt - 1, rs, rs, rs)
+    const ringHit = { x: 0, y: ringY, z: s.zt - 1, r: 6 * rs, stage: s.k }
+    const moves = s.k >= RING.moveFrom
+    ctx.anim.push((dt, t) => {
+      ring.rotation.z = Math.sin(t * 0.6 + s.k) * 0.08
+      if (moves) ring.position.x = ringHit.x = Math.sin(t * RING.speed + s.k) * RING.amp
+    })
     rod(statics, mat('#e8344e'), [14, s.top, s.zt - 10], [4, ringY + 9, s.zt - 2], 0.55, G.cyl)
     mesh(statics, G.sphere, mat('#e8344e'), 4, ringY + 9, s.zt - 2, 0.9, 0.9, 0.9)
-    ctx.rings.push({ x: 0, y: ringY, z: s.zt - 1, r: 6, stage: s.k })
+    ctx.rings.push(ringHit)
     const next = s.k + 1
     const isLast = next > STAGES.count
     const ns = sign([
